@@ -67,6 +67,11 @@ export function ManualSaveDialog({ availableTags, initialName = '', initialTag, 
     }
 
     if (focus === 'newTag') {
+      if (key.leftArrow && !newTagName) {
+        setNewTagMode(false);
+        setFocus('tag');
+        return;
+      }
       if (key.return && name.trim() && newTagName.trim()) {
         onSave(name.trim(), newTagName.trim());
         return;
@@ -81,34 +86,28 @@ export function ManualSaveDialog({ availableTags, initialName = '', initialTag, 
       </Box>
 
       <Box marginBottom={1}>
-        <Text dimColor>Name  </Text>
-        <Box borderStyle="single" borderColor={focus === 'name' ? 'cyan' : 'gray'} flexGrow={1} paddingX={1}>
-          <TextInput
-            value={name}
-            onChange={setName}
-            focus={focus === 'name'}
-            placeholder="request name"
-          />
-        </Box>
+        <Text color={focus === 'name' ? 'cyan' : undefined} dimColor={focus !== 'name'}>Name  </Text>
+        <TextInput
+          value={name}
+          onChange={setName}
+          focus={focus === 'name'}
+          placeholder="request name"
+        />
       </Box>
 
       <Box marginBottom={1}>
-        <Text dimColor>Tag   </Text>
+        <Text color={focus === 'tag' || focus === 'newTag' ? 'cyan' : undefined} dimColor={focus !== 'tag' && focus !== 'newTag'}>Tag   </Text>
         {newTagMode ? (
-          <Box borderStyle="single" borderColor="cyan" flexGrow={1} paddingX={1}>
-            <TextInput
-              value={newTagName}
-              onChange={setNewTagName}
-              focus={focus === 'newTag'}
-              placeholder="new tag name"
-            />
-          </Box>
+          <TextInput
+            value={newTagName}
+            onChange={setNewTagName}
+            focus={focus === 'newTag'}
+            placeholder="new tag name"
+          />
         ) : (
           <Box>
             <Text dimColor>← </Text>
-            <Box borderStyle="single" borderColor={focus === 'tag' ? 'cyan' : 'gray'} paddingX={1} minWidth={20}>
-              <Text color={currentTag ? undefined : 'red'}>{currentTag || '(no tags)'}</Text>
-            </Box>
+            <Text color={focus === 'tag' ? 'cyan' : undefined}>{currentTag || '(no tags)'}</Text>
             <Text dimColor> → new</Text>
           </Box>
         )}

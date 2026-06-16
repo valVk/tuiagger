@@ -338,7 +338,7 @@ export function RightPanel({
           </Box>
           <Text> </Text>
           {editingPath ? (
-            <Box borderStyle="single" borderColor="green" flexGrow={1}>
+            <Box flexGrow={1}>
               <TextInput
                 value={displayPath}
                 onChange={(v) => onOverridePathChange?.(v)}
