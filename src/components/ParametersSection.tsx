@@ -4,6 +4,7 @@ import TextInput from 'ink-text-input';
 import { randomUUID } from 'crypto';
 import type { ParameterObject, CustomParameter } from '../types/index.js';
 import { SpecParamRow } from './SpecParamRow.js';
+import { CustomParamRow } from './CustomParamRow.js';
 
 interface ParametersSectionProps {
   parameters: ParameterObject[];
@@ -387,64 +388,3 @@ export function ParametersSection({
   );
 }
 
-interface CustomParamRowProps {
-  param: CustomParameter;
-  isSelected: boolean;
-  isEditing: boolean;
-  editingField: 'name' | 'value' | null;
-  onNameChange: (name: string) => void;
-  onValueChange: (value: string) => void;
-  nameWidth: number;
-  valueWidth: number;
-  typeWidth: number;
-}
-
-function CustomParamRow({
-  param,
-  isSelected,
-  isEditing,
-  editingField,
-  onNameChange,
-  onValueChange,
-  nameWidth,
-  valueWidth,
-  typeWidth,
-}: CustomParamRowProps) {
-  return (
-    <Box width="100%">
-      {/* Selection cursor — space reserved always */}
-      <Box width={3} flexShrink={0}>
-        <Text color="cyan">{isSelected ? '>' : ' '}</Text>
-      </Box>
-
-      {/* Name - TextInput ONLY when editing name */}
-      <Box width={nameWidth} flexShrink={0}>
-        {isEditing && editingField === 'name' ? (
-          <TextInput value={param.name} onChange={onNameChange} placeholder="name" focus={true} />
-        ) : (
-          <Text color={isSelected ? 'cyan' : undefined}>{param.name || '-'}</Text>
-        )}
-      </Box>
-
-      {/* Value - TextInput ONLY when editing value */}
-      <Box width={valueWidth} flexShrink={0}>
-        {isEditing && editingField === 'value' ? (
-          <TextInput value={param.value} onChange={onValueChange} placeholder="value" focus={true} />
-        ) : (
-          <Text color={isSelected ? 'cyan' : 'green'}>{param.value || '-'}</Text>
-        )}
-      </Box>
-
-      {/* Type */}
-      <Box width={typeWidth} flexShrink={0}>
-        <Text color={isSelected ? 'yellow' : undefined}>{param.in}</Text>
-        {isSelected && <Text dimColor> (c)</Text>}
-      </Box>
-
-      {/* Description */}
-      <Box flexGrow={1}>
-        <Text dimColor>(custom)</Text>
-      </Box>
-    </Box>
-  );
-}
