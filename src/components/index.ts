@@ -16,3 +16,6 @@ export * from './ResponseViewer.js';
 export * from './SpecParamRow.js';
 export * from './CustomParamRow.js';
 export * from './AddNewParamRow.js';
+export * from './ServersSection.js';
+export * from './AuthSection.js';
+export * from './EnvironmentsSection.js';
