@@ -17,7 +17,7 @@ jobs:
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Checkout homebrew-twagger
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: valVK/homebrew-twagger
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
