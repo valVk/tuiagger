@@ -7,3 +7,4 @@ export * from './useOverrides.js';
 export * from './useAuth.js';
 export * from './useEnvironments.js';
 export * from './useParamNavigation.js';
+export * from './useAppKeyboard.js';
