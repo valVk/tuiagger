@@ -1,17 +1,12 @@
-import { useState, useCallback, useEffect } from 'react';
-import {
-  loadOverrides,
-  getEndpointOverride,
-  saveEndpointOverride,
-  deleteEndpointOverride,
-  getEndpointId,
-} from '../utils/persistence.js';
+import { useCallback } from 'react';
+import { loadOverrides, saveOverridesStore, getEndpointId } from '../utils/persistence.js';
+import { useStorage } from './useStorage.js';
 import type { OverridesStore, EndpointOverride, CustomParameter } from '../types/index.js';
 
+const INITIAL: OverridesStore = { version: '1.0', endpoints: {} };
+
 interface UseOverridesReturn {
-  // Get override for an endpoint
   getOverride: (method: string, path: string) => EndpointOverride | null;
-  // Save override for an endpoint
   saveOverride: (
     method: string,
     path: string,
@@ -22,46 +17,21 @@ interface UseOverridesReturn {
     overridePath?: string,
     overrideMethod?: string
   ) => Promise<void>;
-  // Delete override for an endpoint
   deleteOverride: (method: string, path: string) => Promise<boolean>;
-  // Check if endpoint has override
   hasOverride: (method: string, path: string) => boolean;
-  // Check if endpoint has path/method override
   hasPathMethodOverride: (method: string, path: string) => boolean;
-  // Check if endpoint has body override
   hasBodyOverride: (method: string, path: string) => boolean;
-  // Check if endpoint has parameter overrides
   hasParamsOverride: (method: string, path: string) => boolean;
-  // Reload overrides from disk
-  reload: () => Promise<void>;
-  // Loading state
   loading: boolean;
 }
 
 export function useOverrides(): UseOverridesReturn {
-  const [store, setStore] = useState<OverridesStore>({ version: '1.0', endpoints: {} });
-  const [loading, setLoading] = useState(true);
-
-  // Load overrides on mount
-  useEffect(() => {
-    loadOverrides().then(data => {
-      setStore(data);
-      setLoading(false);
-    });
-  }, []);
-
-  const reload = useCallback(async () => {
-    setLoading(true);
-    const data = await loadOverrides();
-    setStore(data);
-    setLoading(false);
-  }, []);
+  const [store, setStore, loading] = useStorage(loadOverrides, saveOverridesStore, INITIAL);
 
   const getOverride = useCallback((method: string, path: string): EndpointOverride | null => {
     const id = getEndpointId(method, path);
     const override = store.endpoints[id];
     if (!override) return null;
-    // Ensure all fields exist (for backwards compatibility)
     return {
       params: override.params || {},
       customParams: override.customParams || [],
@@ -83,75 +53,47 @@ export function useOverrides(): UseOverridesReturn {
     overridePath?: string,
     overrideMethod?: string
   ): Promise<void> => {
-    await saveEndpointOverride(method, path, params, customParams, disabledParams, body, overridePath, overrideMethod);
-    // Update local state
     const id = getEndpointId(method, path);
     setStore(prev => ({
       ...prev,
       endpoints: {
         ...prev.endpoints,
-        [id]: {
-          params,
-          customParams,
-          disabledParams,
-          body,
-          overridePath,
-          overrideMethod,
-          lastUsed: new Date().toISOString(),
-        },
+        [id]: { params, customParams, disabledParams, body, overridePath, overrideMethod, lastUsed: new Date().toISOString() },
       },
     }));
-  }, []);
+  }, [setStore]);
 
   const deleteOverride = useCallback(async (method: string, path: string): Promise<boolean> => {
-    const result = await deleteEndpointOverride(method, path);
-    if (result) {
-      const id = getEndpointId(method, path);
-      setStore(prev => {
-        const newEndpoints = { ...prev.endpoints };
-        delete newEndpoints[id];
-        return { ...prev, endpoints: newEndpoints };
-      });
-    }
-    return result;
-  }, []);
+    const id = getEndpointId(method, path);
+    if (!store.endpoints[id]) return false;
+    setStore(prev => {
+      const endpoints = { ...prev.endpoints };
+      delete endpoints[id];
+      return { ...prev, endpoints };
+    });
+    return true;
+  }, [store, setStore]);
 
   const hasOverride = useCallback((method: string, path: string): boolean => {
-    const id = getEndpointId(method, path);
-    return !!store.endpoints[id];
+    return !!store.endpoints[getEndpointId(method, path)];
   }, [store]);
 
   const hasPathMethodOverride = useCallback((method: string, path: string): boolean => {
-    const id = getEndpointId(method, path);
-    const override = store.endpoints[id];
-    if (!override) return false;
-    return !!(override.overridePath || override.overrideMethod);
+    const override = store.endpoints[getEndpointId(method, path)];
+    return !!(override?.overridePath || override?.overrideMethod);
   }, [store]);
 
   const hasBodyOverride = useCallback((method: string, path: string): boolean => {
-    const id = getEndpointId(method, path);
-    const override = store.endpoints[id];
-    return !!(override?.body);
+    return !!store.endpoints[getEndpointId(method, path)]?.body;
   }, [store]);
 
   const hasParamsOverride = useCallback((method: string, path: string): boolean => {
-    const id = getEndpointId(method, path);
-    const override = store.endpoints[id];
+    const override = store.endpoints[getEndpointId(method, path)];
     if (!override) return false;
     return Object.values(override.params || {}).some(v => v !== '')
       || (override.customParams?.length ?? 0) > 0
       || (override.disabledParams?.length ?? 0) > 0;
   }, [store]);
 
-  return {
-    getOverride,
-    saveOverride,
-    deleteOverride,
-    hasOverride,
-    hasPathMethodOverride,
-    hasBodyOverride,
-    hasParamsOverride,
-    reload,
-    loading,
-  };
+  return { getOverride, saveOverride, deleteOverride, hasOverride, hasPathMethodOverride, hasBodyOverride, hasParamsOverride, loading };
 }
