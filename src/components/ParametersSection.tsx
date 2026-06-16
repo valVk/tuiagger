@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import TextInput from 'ink-text-input';
 import { randomUUID } from 'crypto';
 import type { ParameterObject, CustomParameter } from '../types/index.js';
 import { SpecParamRow } from './SpecParamRow.js';
 import { CustomParamRow } from './CustomParamRow.js';
+import { AddNewParamRow } from './AddNewParamRow.js';
 
 interface ParametersSectionProps {
   parameters: ParameterObject[];
@@ -349,36 +349,21 @@ export function ParametersSection({
 
         if (row.type === 'addNew') {
           return (
-            <Box key="addNew" width="100%">
-              <Box width={3} flexShrink={0}>
-                <Text color={isAddNewSelected ? 'cyan' : undefined} dimColor={!isAddNewSelected}>{isAddNewSelected ? '>' : ' '}</Text>
-              </Box>
-              <Box width={nameWidth} flexShrink={0}>
-                {addingParam && insertMode && editingNewField === 'name' ? (
-                  <TextInput value={newParamName} onChange={setNewParamName} placeholder="param name" focus={true} />
-                ) : addingParam && insertMode ? (
-                  <Text color="cyan">{newParamName || '-'}</Text>
-                ) : (
-                  <Text color={isAddNewSelected ? 'cyan' : undefined} dimColor={!isAddNewSelected}>
-                    {isAddNewSelected ? '[ i: add parameter ]' : '[ + ]'}
-                  </Text>
-                )}
-              </Box>
-              <Box width={valueWidth} flexShrink={0}>
-                {addingParam && insertMode && editingNewField === 'value' ? (
-                  <TextInput value={newParamValue} onChange={setNewParamValue} placeholder="value" focus={true} />
-                ) : addingParam && insertMode ? (
-                  <Text dimColor>{newParamValue || '-'}</Text>
-                ) : isAddNewSelected ? (
-                  <Text dimColor>c: type</Text>
-                ) : null}
-              </Box>
-              {((addingParam && insertMode) || isAddNewSelected) && (
-                <Box width={typeWidth} flexShrink={0}>
-                  <Text color="yellow">{newParamType}</Text>
-                </Box>
-              )}
-            </Box>
+            <AddNewParamRow
+              key="addNew"
+              isSelected={isAddNewSelected}
+              addingParam={addingParam}
+              insertMode={insertMode}
+              editingNewField={editingNewField}
+              newParamName={newParamName}
+              newParamValue={newParamValue}
+              newParamType={newParamType}
+              onNameChange={setNewParamName}
+              onValueChange={setNewParamValue}
+              nameWidth={nameWidth}
+              valueWidth={valueWidth}
+              typeWidth={typeWidth}
+            />
           );
         }
 
