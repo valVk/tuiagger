@@ -327,7 +327,7 @@ export function RightPanel({
     return (
       <Box flexDirection="column">
         {/* Header badge + method + path */}
-        <Box paddingX={1} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor="cyan" width="100%">
+        <Box paddingX={1} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor="cyan" width="100%" flexShrink={0}>
           <Text bold backgroundColor="cyan" color="black">
             {editingRequest ? ` EDITING: ${editingRequest.name} ` : ' MANUAL REQUEST '}
           </Text>
@@ -375,15 +375,17 @@ export function RightPanel({
         )}
 
         <Box flexDirection="column" paddingX={1} width="100%" marginTop={1}>
-          <HeadersSection
-            headers={headerCustomParams}
-            onChange={handleHeadersChange}
-            isActive={isActive && headersFocused}
-            onTabOut={() => setHeadersFocused(false)}
-            onTabBack={() => setHeadersFocused(false)}
-            onInsertModeChange={setHeadersInsertMode}
-          />
-          <Box marginTop={1} flexDirection="column" width="100%">
+          <Box flexShrink={0} flexDirection="column" width="100%">
+            <HeadersSection
+              headers={headerCustomParams}
+              onChange={handleHeadersChange}
+              isActive={isActive && headersFocused}
+              onTabOut={() => setHeadersFocused(false)}
+              onTabBack={() => setHeadersFocused(false)}
+              onInsertModeChange={setHeadersInsertMode}
+            />
+          </Box>
+          <Box marginTop={1} flexDirection="column" width="100%" flexShrink={0}>
             <ParametersSection
               parameters={[]}
               isTryItMode={true}
@@ -405,7 +407,7 @@ export function RightPanel({
           {/* Body editor — only for methods that support a body */}
           {['POST', 'PUT', 'PATCH', 'DELETE'].includes(displayMethod.toUpperCase()) && (
             <Box flexDirection="column" flexShrink={0} marginTop={1}>
-              <Box>
+              <Box flexShrink={0}>
                 <Text bold>BODY </Text>
                 <Text dimColor>application/json</Text>
               </Box>
@@ -503,7 +505,7 @@ export function RightPanel({
         )}
 
         {/* Header with method/path */}
-        <Box paddingX={1} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor="gray" width="100%">
+        <Box paddingX={1} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor="gray" width="100%" flexShrink={0}>
           {isTryItMode ? (
             <>
               <Box>
@@ -569,7 +571,7 @@ export function RightPanel({
           </Box>
         )}
 
-        <Box flexDirection="column" paddingX={1} width="100%">
+        <Box flexDirection="column" paddingX={1} width="100%" flexShrink={0}>
           {operation.summary && (
             <Box flexShrink={0}>
               <Text bold>{operation.summary}</Text>
@@ -704,7 +706,7 @@ export function RightPanel({
   };
 
   const renderSavedRequestDetails = (item: FlatListItem) => {
-    const { method, path, name, queryParams, headers } = item.savedRequest!;
+    const { method, path, name, queryParams, headers, body: savedBody, bodyType } = item.savedRequest!;
     const isTryItMode = mode === 'tryItOut';
 
     // Convert saved KeyValuePairs to CustomParameter[] for use with the same components
@@ -718,7 +720,7 @@ export function RightPanel({
     return (
       <Box flexDirection="column">
         {/* Header */}
-        <Box paddingX={1} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor="gray" width="100%">
+        <Box paddingX={1} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor="gray" width="100%" flexShrink={0}>
           <Text color="yellow">* </Text>
           <MethodBadge method={method} />
           <Text bold> {path}</Text>
@@ -730,7 +732,9 @@ export function RightPanel({
         {/* Actions */}
         {isActive && (
           <Box justifyContent="flex-end" flexShrink={0}>
-            <Text dimColor>[ Edit (E) ] [ Delete (D) ] </Text>
+            <Text dimColor>[ Edit (E) ] [ Delete (D) ] [ </Text>
+            <Text color="green" bold>Execute (e)</Text>
+            <Text dimColor> ] </Text>
             <Text color="cyan">[ Try it out (t) ]</Text>
           </Box>
         )}
@@ -741,26 +745,47 @@ export function RightPanel({
             <Text bold>{name}</Text>
           </Box>
 
-          <Box flexShrink={0} width="100%" marginTop={1} flexDirection="column">
-            <HeadersSection
-              headers={headerCustomParams}
-              onChange={() => {}}
-              isActive={false}
-              onInsertModeChange={() => {}}
-            />
-            <Box marginTop={1} flexDirection="column" width="100%">
-              <ParametersSection
-                parameters={[]}
-                isTryItMode={false}
-                values={{}}
-                customParams={queryCustomParams}
-                onCustomParamsChange={() => {}}
-                disabledParams={[]}
-                onDisabledParamsChange={() => {}}
-                onInsertModeChange={() => {}}
-              />
+          {(headerCustomParams.length > 0 || queryCustomParams.length > 0) && (
+            <Box flexShrink={0} width="100%" marginTop={1} flexDirection="column">
+              {headerCustomParams.length > 0 && (
+                <HeadersSection
+                  headers={headerCustomParams}
+                  onChange={() => {}}
+                  isActive={false}
+                  onInsertModeChange={() => {}}
+                />
+              )}
+              {queryCustomParams.length > 0 && (
+                <Box marginTop={headerCustomParams.length > 0 ? 1 : 0} flexDirection="column" width="100%">
+                  <ParametersSection
+                    parameters={[]}
+                    isTryItMode={false}
+                    values={{}}
+                    customParams={queryCustomParams}
+                    onCustomParamsChange={() => {}}
+                    disabledParams={[]}
+                    onDisabledParamsChange={() => {}}
+                    onInsertModeChange={() => {}}
+                  />
+                </Box>
+              )}
             </Box>
-          </Box>
+          )}
+
+          {/* Body (read-only display) */}
+          {savedBody && (
+            <Box flexDirection="column" flexShrink={0} marginTop={1}>
+              <Box>
+                <Text bold>BODY </Text>
+                <Text dimColor>{bodyType === 'json' ? 'application/json' : 'text/plain'}</Text>
+              </Box>
+              <Box paddingLeft={1} flexDirection="column">
+                {savedBody.split('\n').map((line, i) => (
+                  <Text key={i} color="green">{line}</Text>
+                ))}
+              </Box>
+            </Box>
+          )}
 
           {/* Response */}
           {response && (
