@@ -1,0 +1,36 @@
+name: Update Homebrew formula
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get release tarball sha256
+        id: sha
+        run: |
+          URL="https://github.com/valVK/twagger/archive/refs/tags/${{ github.ref_name }}.tar.gz"
+          SHA=$(curl -sL "$URL" | shasum -a 256 | cut -d' ' -f1)
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-twagger
+        uses: actions/checkout@v4
+        with:
+          repository: valVK/homebrew-twagger
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update formula
+        run: |
+          sed -i "s|url \".*\"|url \"${{ steps.sha.outputs.url }}\"|" Formula/twagger.rb
+          sed -i "s|sha256 \".*\"|sha256 \"${{ steps.sha.outputs.sha256 }}\"|" Formula/twagger.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/twagger.rb
+          git commit -m "Update twagger to ${{ github.ref_name }}"
+          git push
