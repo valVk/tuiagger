@@ -8,3 +8,4 @@ export * from './useAuth.js';
 export * from './useEnvironments.js';
 export * from './useParamNavigation.js';
 export * from './useAppKeyboard.js';
+export * from './useHeadersNavigation.js';
