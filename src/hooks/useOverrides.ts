@@ -5,7 +5,7 @@ import {
   saveEndpointOverride,
   deleteEndpointOverride,
   getEndpointId,
-} from '../utils/storage.js';
+} from '../utils/persistence.js';
 import type { OverridesStore, EndpointOverride, CustomParameter } from '../types/index.js';
 
 interface UseOverridesReturn {

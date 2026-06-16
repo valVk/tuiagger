@@ -5,7 +5,7 @@ import {
   updateSavedRequest,
   deleteSavedRequest,
   addCustomTag,
-} from '../utils/storage.js';
+} from '../utils/persistence.js';
 import type { SavedRequest, SavedRequestsStore, CustomTag } from '../types/index.js';
 
 interface UseSavedRequestsResult {

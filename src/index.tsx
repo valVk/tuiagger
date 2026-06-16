@@ -4,7 +4,7 @@ import React from 'react';
 import { withFullScreen } from 'fullscreen-ink';
 import { App } from './App.js';
 import { ServicesProvider } from './contexts/ServicesContext.js';
-import { resolveCollection, listCollections, setCollectionPath } from './utils/storage.js';
+import { resolveCollection, listCollections, setCollectionPath } from './utils/collectionResolver.js';
 
 const args = process.argv.slice(2);
 

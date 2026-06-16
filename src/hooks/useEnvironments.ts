@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { loadEnvironments, saveEnvironments } from '../utils/storage.js';
+import { loadEnvironments, saveEnvironments } from '../utils/persistence.js';
 import { useStorage } from './useStorage.js';
 import type { EnvironmentsStore } from '../types/index.js';
 

@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { loadAuth, saveAuth } from '../utils/storage.js';
+import { loadAuth, saveAuth } from '../utils/persistence.js';
 import { useStorage } from './useStorage.js';
 import type { AuthStore } from '../types/index.js';
 
