@@ -1,3 +1,4 @@
+export * from './useStorage.js';
 export * from './useOpenAPI.js';
 export * from './useSavedRequests.js';
 export * from './useRequest.js';

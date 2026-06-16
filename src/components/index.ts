@@ -11,3 +11,5 @@ export * from './ManualSaveDialog.js';
 export * from './Spinner.js';
 export * from './LeftPanel.js';
 export * from './RightPanel.js';
+export * from './ManualRequestPanel.js';
+export * from './ResponseViewer.js';

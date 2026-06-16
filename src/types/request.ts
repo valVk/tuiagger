@@ -111,3 +111,16 @@ export interface EnvironmentsStore {
   environments: Environment[];
   activeIndex: number;
 }
+
+export interface RequestSpec {
+  method: string;
+  baseUrl: string;
+  /** Path with {param} placeholders already substituted */
+  path: string;
+  queryParams: KeyValuePair[];
+  headerParams: KeyValuePair[];
+  body?: string;
+  operationSecurity?: import('./openapi.js').SecurityRequirementObject[];
+  securitySchemes?: Record<string, import('./openapi.js').SecuritySchemeObject>;
+  authCredentials?: Record<string, string>;
+}

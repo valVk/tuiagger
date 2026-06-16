@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { useScreenSize } from 'fullscreen-ink';
 import {
@@ -9,6 +9,7 @@ import {
   LeftPanel,
   RightPanel,
   ManualSaveDialog,
+  ManualRequestPanel,
   Spinner,
 } from './components/index.js';
 import {
@@ -23,14 +24,25 @@ import {
 import { getEndpointsByTag } from './utils/parser.js';
 import { scaffoldBody } from './utils/scaffoldBody.js';
 import { interpolate } from './utils/interpolate.js';
-import type { KeyValuePair, SavedRequest, CustomParameter, SecuritySchemeObject } from './types/index.js';
+import { ParameterCollector } from './utils/parameterCollector.js';
+import type { KeyValuePair, SavedRequest, CustomParameter, SecuritySchemeObject, RequestSpec } from './types/index.js';
 
 interface AppProps {
   source: string;
   collectionName?: string;
 }
 
-type AppMode = 'browse' | 'tryit' | 'manual';
+type ManualState = {
+  mode: 'manual';
+  path: string;
+  method: string;
+  customParams: CustomParameter[];
+  body: string;
+  editingRequest?: SavedRequest;
+  showSaveDialog: boolean;
+};
+
+type AppState = { mode: 'browse' | 'tryit' } | ManualState;
 
 export function App({ source, collectionName }: AppProps) {
   const { exit } = useApp();
@@ -41,16 +53,13 @@ export function App({ source, collectionName }: AppProps) {
   const overrides = useOverrides();
   const auth = useAuth();
   const envs = useEnvironments();
-  const activeEnvVarsRef = useRef(envs.activeEnv?.variables);
-  useEffect(() => {
-    activeEnvVarsRef.current = envs.activeEnv?.variables;
-  }, [envs.activeEnv]);
 
-  // FullScreenBox sets outer height = stdout.rows; statusbar takes 3 rows
   const contentHeight = Math.max(terminalHeight - 6, 10);
 
-  const [mode, setMode] = useState<AppMode>('browse');
+  const [appState, setAppState] = useState<AppState>({ mode: 'browse' });
   const [selectedServer, setSelectedServer] = useState(0);
+
+  // Endpoint editing state — shared between browse (read-only) and tryit (editable)
   const [parameterValues, setParameterValues] = useState<Record<string, string>>({});
   const [customParams, setCustomParams] = useState<CustomParameter[]>([]);
   const [disabledParams, setDisabledParams] = useState<string[]>([]);
@@ -58,58 +67,42 @@ export function App({ source, collectionName }: AppProps) {
   const [overridePath, setOverridePath] = useState<string | undefined>();
   const [overrideMethod, setOverrideMethod] = useState<string | undefined>();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
   const [showInfoPopup, setShowInfoPopup] = useState(false);
   const [showHelpPopup, setShowHelpPopup] = useState(false);
   const [leftExpanded, setLeftExpanded] = useState(false);
-  const [editingRequest, setEditingRequest] = useState<SavedRequest | undefined>();
   const [lastEditedEndpointId, setLastEditedEndpointId] = useState<string | null>(null);
-
-  // Manual request mode state (isolated from spec tryit state)
-  const [manualOverridePath, setManualOverridePath] = useState('');
-  const [manualOverrideMethod, setManualOverrideMethod] = useState('GET');
-  const [manualCustomParams, setManualCustomParams] = useState<CustomParameter[]>([]);
-  const [manualBody, setManualBody] = useState('');
-  const [showManualSaveDialog, setShowManualSaveDialog] = useState(false);
   const [rightPanelNormalMode, setRightPanelNormalMode] = useState(true);
 
-  // Group endpoints by tag
   const endpointsByTag = useMemo(() => {
     if (!spec) return new Map();
     return getEndpointsByTag(spec.endpoints);
   }, [spec]);
 
-  // Get all tags including custom ones
   const allTags = useMemo(() => {
     if (!spec) return [];
     return savedRequests.getAllTags(spec.tags);
   }, [spec, savedRequests]);
 
-  // Panel navigation - now self-contained
   const panelNav = usePanelNavigation({
     allTags,
     endpointsByTag,
     savedRequestsByTag: savedRequests.getRequestsByTag,
-    enabled: mode === 'browse' && !showInfoPopup && !showHelpPopup,
+    enabled: appState.mode === 'browse' && !showInfoPopup && !showHelpPopup,
     onQuit: exit,
     onReload: reload,
   });
 
-  // Get derived state from the navigation hook
   const { flatList, selectedItem } = panelNav;
 
-  // When response arrives, scroll back to top so params stay visible above response
   useEffect(() => {
-    if (request.response) {
-      panelNav.setRightScroll(0);
-    }
+    if (request.response) panelNav.setRightScroll(0);
   }, [request.response]);
 
-  // Clear response and load overrides when selection changes
   useEffect(() => {
     request.clear();
     setShowResetConfirm(false);
 
-    // Load overrides for the selected endpoint
     if (selectedItem?.type === 'endpoint') {
       const endpoint = selectedItem.endpoint!;
       const override = overrides.getOverride(endpoint.method, endpoint.path);
@@ -140,7 +133,6 @@ export function App({ source, collectionName }: AppProps) {
     }
   }, [selectedItem?.id]);
 
-  // Tag counts for display
   const tagCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const tag of allTags) {
@@ -151,68 +143,46 @@ export function App({ source, collectionName }: AppProps) {
     return counts;
   }, [allTags, endpointsByTag, savedRequests]);
 
-  // Handle additional keyboard input for modes
+  // Browse-mode keyboard handler
   useInput(
     (input, key) => {
-      if (mode !== 'browse') return;
+      if (appState.mode !== 'browse') return;
 
-      // Info popup
-      if (input === 'i') {
-        setShowInfoPopup(prev => !prev);
-        return;
-      }
+      if (input === 'i') { setShowInfoPopup(prev => !prev); return; }
+      if (input === '?') { setShowHelpPopup(prev => !prev); return; }
+      if (input === '[') { setLeftExpanded(prev => !prev); return; }
 
-      // Help popup
-      if (input === '?') {
-        setShowHelpPopup(prev => !prev);
-        return;
-      }
-
-      // Toggle left panel expand
-      if (input === '[') {
-        setLeftExpanded(prev => !prev);
-        return;
-      }
-
-      // Open manual request mode (new empty request)
       if (input === 'm') {
-        setManualOverridePath('');
-        setManualOverrideMethod('GET');
-        setManualCustomParams([]);
-        setManualBody('');
-        setEditingRequest(undefined);
-        setShowManualSaveDialog(false);
-        setMode('manual');
+        setAppState({ mode: 'manual', path: '', method: 'GET', customParams: [], body: '', showSaveDialog: false });
         panelNav.setActivePanel('right');
         return;
       }
 
-      // Edit saved request (E = open in manual mode pre-filled)
       if (input === 'E' && selectedItem?.type === 'savedRequest') {
         const saved = selectedItem.savedRequest!;
-        setManualOverridePath(saved.path);
-        setManualOverrideMethod(saved.method);
-        setManualCustomParams([
-          ...saved.queryParams.map(p => ({ id: p.id, name: p.key, value: p.value, in: 'query' as const, enabled: p.enabled })),
-          ...saved.headers.map(h => ({ id: h.id, name: h.key, value: h.value, in: 'header' as const, enabled: h.enabled })),
-        ]);
-        setManualBody(saved.body || '');
-        setEditingRequest(saved);
-        setShowManualSaveDialog(false);
         request.clear();
-        setMode('manual');
+        setAppState({
+          mode: 'manual',
+          path: saved.path,
+          method: saved.method,
+          customParams: [
+            ...saved.queryParams.map(p => ({ id: p.id, name: p.key, value: p.value, in: 'query' as const, enabled: p.enabled })),
+            ...saved.headers.map(h => ({ id: h.id, name: h.key, value: h.value, in: 'header' as const, enabled: h.enabled })),
+          ],
+          body: saved.body || '',
+          editingRequest: saved,
+          showSaveDialog: false,
+        });
         panelNav.setActivePanel('right');
         panelNav.setRightScroll(0);
         return;
       }
 
-      // Delete saved request
       if (input === 'D' && selectedItem?.type === 'savedRequest') {
         void savedRequests.remove(selectedItem.savedRequest!.id);
         return;
       }
 
-      // Try it out mode
       if (input === 't' && (selectedItem?.type === 'endpoint' || selectedItem?.type === 'savedRequest')) {
         if (!body && selectedItem.type === 'endpoint' && spec) {
           const op = selectedItem.endpoint!.operation;
@@ -223,84 +193,72 @@ export function App({ source, collectionName }: AppProps) {
             if (scaffolded !== null) setBody(JSON.stringify(scaffolded, null, 2));
           }
         }
-        setMode('tryit');
+        setAppState({ mode: 'tryit' });
         panelNav.setRightMode('tryItOut');
         panelNav.setActivePanel('right');
         panelNav.setRightScroll(0);
         return;
       }
 
-      // Execute request
       if (input === 'e' && (selectedItem?.type === 'endpoint' || selectedItem?.type === 'savedRequest')) {
         panelNav.setRightScroll(0);
-        executeCurrentEndpoint();
+        void executeCurrentEndpoint();
         return;
       }
     },
-    { isActive: mode === 'browse' && !showInfoPopup && !showHelpPopup }
+    { isActive: appState.mode === 'browse' && !showInfoPopup && !showHelpPopup }
   );
 
-  // Handle try-it-out and manual mode input
+  // Tryit + manual keyboard handler
   useInput(
     (input, key) => {
-      const isManual = mode === 'manual';
-      const isTryit = mode === 'tryit';
+      const isManual = appState.mode === 'manual';
+      const isTryit = appState.mode === 'tryit';
       if (!isManual && !isTryit) return;
 
       if (key.escape && rightPanelNormalMode) {
         if (isManual) {
-          setMode('browse');
-          setEditingRequest(undefined);
-          setShowManualSaveDialog(false);
+          setAppState({ mode: 'browse' });
           request.clear();
           return;
         }
         if (selectedItem?.type === 'endpoint') {
           const endpoint = selectedItem.endpoint!;
-          overrides.saveOverride(
-            endpoint.method,
-            endpoint.path,
-            parameterValues,
-            customParams,
-            disabledParams,
-            body || undefined,
-            overridePath,
-            overrideMethod
+          void overrides.saveOverride(
+            endpoint.method, endpoint.path, parameterValues,
+            customParams, disabledParams, body || undefined, overridePath, overrideMethod
           );
         }
         setShowResetConfirm(false);
-        setMode('browse');
+        setAppState({ mode: 'browse' });
         panelNav.setRightMode('details');
         return;
       }
 
-      // Save (manual only)
       if (input === 's' && isManual && rightPanelNormalMode) {
-        setShowManualSaveDialog(true);
+        const manual = appState as ManualState;
+        setAppState({ ...manual, showSaveDialog: true });
         return;
       }
 
-      // Execute
       if (input === 'e' && rightPanelNormalMode) {
         panelNav.setRightScroll(0);
-        if (isManual) {
-          handleManualExecuteFromState();
-        } else {
-          executeCurrentEndpoint();
+        if (isManual) void handleManualExecuteFromState();
+        else void executeCurrentEndpoint();
+        return;
+      }
+
+      if (input === 'd' && isManual && rightPanelNormalMode) {
+        const manual = appState as ManualState;
+        if (manual.editingRequest) {
+          void savedRequests.remove(manual.editingRequest.id).then(() => {
+            setAppState({ mode: 'browse' });
+          });
         }
         return;
       }
-
-      // Delete editing request (manual only)
-      if (input === 'd' && isManual && editingRequest && rightPanelNormalMode) {
-        void savedRequests.remove(editingRequest.id).then(() => {
-          setMode('browse');
-          setEditingRequest(undefined);
-        });
-        return;
-      }
     },
-    { isActive: mode === 'tryit' || mode === 'manual' }
+    { isActive: appState.mode === 'tryit' || appState.mode === 'manual' }
   );
 
   const executeCurrentEndpoint = async () => {
@@ -308,167 +266,105 @@ export function App({ source, collectionName }: AppProps) {
 
     const servers = spec.spec.servers || [{ url: 'http://localhost' }];
     const baseUrl = servers[selectedServer]?.url || servers[0].url;
-
-    const envVars = activeEnvVarsRef.current;
+    const envVars = envs.activeEnv?.variables;
 
     if (selectedItem.type === 'endpoint') {
       const endpoint = selectedItem.endpoint!;
 
-      // Save overrides before executing
       await overrides.saveOverride(
-        endpoint.method,
-        endpoint.path,
-        parameterValues,
-        customParams,
-        disabledParams,
-        body || undefined,
-        overridePath,
-        overrideMethod
+        endpoint.method, endpoint.path, parameterValues,
+        customParams, disabledParams, body || undefined, overridePath, overrideMethod
       );
 
-      // Build query params from parameter values (excluding disabled)
-      const queryParams: KeyValuePair[] = [];
-      const headerParams: KeyValuePair[] = [];
-
-      for (const param of endpoint.operation.parameters || []) {
-        // Skip disabled params
-        if (disabledParams.includes(param.name)) continue;
-
-        const value = interpolate(parameterValues[param.name] || '', envVars);
-        if (param.in === 'query' && value) {
-          queryParams.push({
-            id: param.name,
-            key: param.name,
-            value,
-            enabled: true,
-          });
-        } else if (param.in === 'header' && value) {
-          headerParams.push({
-            id: param.name,
-            key: param.name,
-            value,
-            enabled: true,
-          });
-        }
-      }
-
-      // Add custom params
-      for (const param of customParams) {
-        if (!param.enabled || !param.name) continue;
-
-        if (param.in === 'query') {
-          queryParams.push({
-            id: param.id,
-            key: param.name,
-            value: interpolate(param.value, envVars),
-            enabled: true,
-          });
-        } else if (param.in === 'header') {
-          headerParams.push({
-            id: param.id,
-            key: param.name,
-            value: interpolate(param.value, envVars),
-            enabled: true,
-          });
-        }
-        // Note: custom path params are handled below
-      }
-
-      // Build path with path params (excluding disabled)
-      // Use override path if set, otherwise use spec path
-      let path = overridePath || endpoint.path;
-      for (const param of endpoint.operation.parameters || []) {
-        if (param.in === 'path' && !disabledParams.includes(param.name)) {
-          const value = interpolate(parameterValues[param.name] || '', envVars);
-          path = path.replace(`{${param.name}}`, encodeURIComponent(value));
-        }
-      }
-
-      // Apply custom path params (replace {name} patterns)
-      for (const param of customParams) {
-        if (param.enabled && param.in === 'path' && param.name) {
-          path = path.replace(`{${param.name}}`, encodeURIComponent(interpolate(param.value, envVars)));
-        }
-      }
-
-      // Use override method if set, otherwise use spec method
-      const method = overrideMethod || endpoint.method;
-
-      await request.execute(
-        method, baseUrl, path, queryParams, headerParams, body ? interpolate(body, envVars) : undefined,
-        endpoint.operation.security || spec.spec.security,
-        spec.spec.components?.securitySchemes as Record<string, SecuritySchemeObject> | undefined,
-        auth.store.credentials
+      const collector = new ParameterCollector(
+        endpoint.operation.parameters || [], customParams, disabledParams, parameterValues, envVars
       );
+
+      const spec_: RequestSpec = {
+        method: overrideMethod || endpoint.method,
+        baseUrl,
+        path: collector.applyPathParams(overridePath || endpoint.path),
+        queryParams: collector.getQueryParams(),
+        headerParams: collector.getHeaderParams(),
+        body: body ? interpolate(body, envVars) : undefined,
+        operationSecurity: endpoint.operation.security || spec.spec.security,
+        securitySchemes: spec.spec.components?.securitySchemes as Record<string, SecuritySchemeObject> | undefined,
+        authCredentials: auth.store.credentials,
+      };
+
+      await request.execute(spec_);
     } else if (selectedItem.type === 'savedRequest') {
       const saved = selectedItem.savedRequest!;
-      await request.execute(
-        saved.method,
+      const spec_: RequestSpec = {
+        method: saved.method,
         baseUrl,
-        saved.path,
-        saved.queryParams.map(p => ({ ...p, value: interpolate(p.value, envVars) })),
-        saved.headers.map(h => ({ ...h, value: interpolate(h.value, envVars) })),
-        saved.body ? interpolate(saved.body, envVars) : undefined
-      );
+        path: interpolate(saved.path, envVars),
+        queryParams: saved.queryParams.map(p => ({ ...p, value: interpolate(p.value, envVars) })),
+        headerParams: saved.headers.map(h => ({ ...h, value: interpolate(h.value, envVars) })),
+        body: saved.body ? interpolate(saved.body, envVars) : undefined,
+        operationSecurity: spec.spec.security,
+        securitySchemes: spec.spec.components?.securitySchemes as Record<string, SecuritySchemeObject> | undefined,
+        authCredentials: auth.store.credentials,
+      };
+      await request.execute(spec_);
     }
   };
 
   const handleManualExecuteFromState = async () => {
-    if (!manualOverridePath) return;
-    const envVars = activeEnvVarsRef.current;
+    const manual = appState as ManualState;
+    if (!manual.path) return;
+
+    const envVars = envs.activeEnv?.variables;
     const servers = spec?.spec.servers || [{ url: 'http://localhost' }];
     const baseUrl = servers[selectedServer]?.url || servers[0].url;
 
-    const queryParams: KeyValuePair[] = manualCustomParams
-      .filter(p => p.in === 'query' && p.enabled && p.name)
-      .map(p => ({ id: p.id, key: p.name, value: interpolate(p.value, envVars), enabled: true }));
-    const headerParams: KeyValuePair[] = manualCustomParams
-      .filter(p => p.in === 'header' && p.enabled && p.name)
-      .map(p => ({ id: p.id, key: p.name, value: interpolate(p.value, envVars), enabled: true }));
-
-    await request.execute(
-      manualOverrideMethod || 'GET',
+    const collector = new ParameterCollector([], manual.customParams, [], {}, envVars);
+    const spec_: RequestSpec = {
+      method: manual.method || 'GET',
       baseUrl,
-      interpolate(manualOverridePath, envVars),
-      queryParams,
-      headerParams,
-      manualBody ? interpolate(manualBody, envVars) : undefined
-    );
+      path: interpolate(manual.path, envVars),
+      queryParams: collector.getQueryParams(),
+      headerParams: collector.getHeaderParams(),
+      body: manual.body ? interpolate(manual.body, envVars) : undefined,
+      operationSecurity: spec?.spec.security,
+      securitySchemes: spec?.spec.components?.securitySchemes as Record<string, SecuritySchemeObject> | undefined,
+      authCredentials: auth.store.credentials,
+    };
+    await request.execute(spec_);
   };
 
   const handleManualSaveFromDialog = async (name: string, tag: string) => {
-    setShowManualSaveDialog(false);
+    const manual = appState as ManualState;
 
     if (!spec?.tags.includes(tag)) {
       await savedRequests.createTag({ name: tag });
     }
 
-    const queryParams: KeyValuePair[] = manualCustomParams
+    const queryParams: KeyValuePair[] = manual.customParams
       .filter(p => p.in === 'query')
       .map(p => ({ id: p.id, key: p.name, value: p.value, enabled: p.enabled }));
-    const headers: KeyValuePair[] = manualCustomParams
+    const headers: KeyValuePair[] = manual.customParams
       .filter(p => p.in === 'header')
       .map(p => ({ id: p.id, key: p.name, value: p.value, enabled: p.enabled }));
 
     const requestData: Omit<SavedRequest, 'id' | 'createdAt' | 'updatedAt'> = {
-      method: (manualOverrideMethod || 'GET') as SavedRequest['method'],
-      path: manualOverridePath,
+      method: (manual.method || 'GET') as SavedRequest['method'],
+      path: manual.path,
       queryParams,
       headers,
-      body: manualBody,
+      body: manual.body,
       bodyType: 'json',
       name,
       tag,
     };
 
-    if (editingRequest) {
-      await savedRequests.update(editingRequest.id, requestData);
+    if (manual.editingRequest) {
+      await savedRequests.update(manual.editingRequest.id, requestData);
     } else {
       await savedRequests.save(requestData);
     }
 
-    setMode('browse');
-    setEditingRequest(undefined);
+    setAppState({ mode: 'browse' });
   };
 
   const handleParameterChange = useCallback((name: string, value: string) => {
@@ -483,9 +379,7 @@ export function App({ source, collectionName }: AppProps) {
     setShowResetConfirm(false);
     if (confirmed && selectedItem?.type === 'endpoint') {
       const endpoint = selectedItem.endpoint!;
-      // Delete the override from storage
       await overrides.deleteOverride(endpoint.method, endpoint.path);
-      // Reset local state to defaults
       setParameterValues({});
       setCustomParams([]);
       setDisabledParams([]);
@@ -495,7 +389,6 @@ export function App({ source, collectionName }: AppProps) {
     }
   }, [selectedItem, overrides]);
 
-  // Loading state
   if (loading) {
     return (
       <Box padding={2}>
@@ -504,26 +397,20 @@ export function App({ source, collectionName }: AppProps) {
     );
   }
 
-  // Error state
   if (error || !spec) {
     return (
       <Box flexDirection="column" padding={2}>
-        <Text color="red" bold>
-          Error loading OpenAPI specification
-        </Text>
+        <Text color="red" bold>Error loading OpenAPI specification</Text>
         <Text color="red">{error || 'Unknown error'}</Text>
-        <Box marginTop={1}>
-          <Text dimColor>Source: {source}</Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text dimColor>Press Ctrl+R to retry or q to quit</Text>
-        </Box>
+        <Box marginTop={1}><Text dimColor>Source: {source}</Text></Box>
+        <Box marginTop={1}><Text dimColor>Press Ctrl+R to retry or q to quit</Text></Box>
       </Box>
     );
   }
 
-  // Main two-panel view
   const leftWidthPct = leftExpanded ? 50 : 30;
+  const isManual = appState.mode === 'manual';
+  const manual = isManual ? (appState as ManualState) : null;
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -534,7 +421,6 @@ export function App({ source, collectionName }: AppProps) {
         collectionName={collectionName}
         activeEnvName={envs.activeEnv?.name}
       />
-      {/* Content area — popup replaces panels when open */}
       {showHelpPopup ? (
         <Box flexGrow={1} overflow="hidden">
           <HelpPopup onClose={() => setShowHelpPopup(false)} height={contentHeight} />
@@ -558,14 +444,14 @@ export function App({ source, collectionName }: AppProps) {
           />
           <Box flexGrow={1} />
         </Box>
-      ) : showManualSaveDialog ? (
+      ) : manual?.showSaveDialog ? (
         <Box flexGrow={1} alignItems="center" justifyContent="center">
           <ManualSaveDialog
             availableTags={allTags}
-            initialName={editingRequest?.name}
-            initialTag={editingRequest?.tag}
+            initialName={manual.editingRequest?.name}
+            initialTag={manual.editingRequest?.tag}
             onSave={handleManualSaveFromDialog}
-            onCancel={() => setShowManualSaveDialog(false)}
+            onCancel={() => setAppState({ ...manual, showSaveDialog: false })}
           />
         </Box>
       ) : (
@@ -574,7 +460,7 @@ export function App({ source, collectionName }: AppProps) {
             items={flatList}
             selectedIndex={panelNav.leftIndex}
             expandedTags={panelNav.expandedTags}
-            isActive={panelNav.activePanel === 'left' && mode === 'browse'}
+            isActive={panelNav.activePanel === 'left' && appState.mode === 'browse'}
             tagCounts={tagCounts}
             height={contentHeight}
             widthPct={leftWidthPct}
@@ -583,42 +469,61 @@ export function App({ source, collectionName }: AppProps) {
             hasBodyOverride={overrides.hasBodyOverride}
             hasParamsOverride={overrides.hasParamsOverride}
           />
-          <RightPanel
-            selectedItem={mode === 'manual' ? null : selectedItem}
-            mode={mode === 'tryit' || mode === 'manual' ? 'tryItOut' : panelNav.rightMode}
-            isActive={panelNav.activePanel === 'right' || mode === 'tryit' || mode === 'manual'}
-            scrollOffset={panelNav.rightScroll}
-            parameterValues={mode === 'manual' ? {} : parameterValues}
-            onParameterChange={mode === 'manual' ? () => {} : handleParameterChange}
-            body={mode === 'manual' ? manualBody : body}
-            onBodyChange={mode === 'manual' ? setManualBody : setBody}
-            response={request.response}
-            curl={request.curl || undefined}
-            isLoading={request.loading}
-            height={contentHeight}
-            onScrollChange={panelNav.setRightScroll}
-            customParams={mode === 'manual' ? manualCustomParams : customParams}
-            onCustomParamsChange={mode === 'manual' ? setManualCustomParams : setCustomParams}
-            disabledParams={mode === 'manual' ? [] : disabledParams}
-            onDisabledParamsChange={mode === 'manual' ? undefined : setDisabledParams}
-            overridePath={mode === 'manual' ? manualOverridePath : overridePath}
-            overrideMethod={mode === 'manual' ? manualOverrideMethod : overrideMethod}
-            onOverridePathChange={mode === 'manual' ? setManualOverridePath : setOverridePath}
-            onOverrideMethodChange={mode === 'manual' ? setManualOverrideMethod : setOverrideMethod}
-            onResetOverrides={handleResetOverrides}
-            showResetConfirm={showResetConfirm}
-            onResetConfirmResponse={handleResetConfirmResponse}
-
-            onNormalModeChange={setRightPanelNormalMode}
-            manualMode={mode === 'manual'}
-            editingRequest={mode === 'manual' ? editingRequest : undefined}
-            specComponents={spec.spec.components as Record<string, unknown> | undefined}
-          />
+          {isManual && manual ? (
+            <ManualRequestPanel
+              path={manual.path}
+              method={manual.method}
+              customParams={manual.customParams}
+              body={manual.body}
+              editingRequest={manual.editingRequest}
+              isActive={true}
+              response={request.response ?? undefined}
+              curl={request.curl ?? undefined}
+              isLoading={request.loading}
+              height={contentHeight}
+              scrollOffset={panelNav.rightScroll}
+              onPathChange={(path) => setAppState({ ...manual, path })}
+              onMethodChange={(method) => setAppState({ ...manual, method })}
+              onCustomParamsChange={(customParams) => setAppState({ ...manual, customParams })}
+              onBodyChange={(body) => setAppState({ ...manual, body })}
+              onNormalModeChange={setRightPanelNormalMode}
+              onScrollReset={() => panelNav.setRightScroll(0)}
+            />
+          ) : (
+            <RightPanel
+              selectedItem={selectedItem}
+              mode={appState.mode === 'tryit' ? 'tryItOut' : panelNav.rightMode}
+              isActive={panelNav.activePanel === 'right' || appState.mode === 'tryit'}
+              scrollOffset={panelNav.rightScroll}
+              parameterValues={parameterValues}
+              onParameterChange={handleParameterChange}
+              body={body}
+              onBodyChange={setBody}
+              response={request.response}
+              curl={request.curl ?? undefined}
+              isLoading={request.loading}
+              height={contentHeight}
+              onScrollChange={panelNav.setRightScroll}
+              customParams={customParams}
+              onCustomParamsChange={setCustomParams}
+              disabledParams={disabledParams}
+              onDisabledParamsChange={setDisabledParams}
+              overridePath={overridePath}
+              overrideMethod={overrideMethod}
+              onOverridePathChange={setOverridePath}
+              onOverrideMethodChange={setOverrideMethod}
+              onResetOverrides={handleResetOverrides}
+              showResetConfirm={showResetConfirm}
+              onResetConfirmResponse={handleResetConfirmResponse}
+              onNormalModeChange={setRightPanelNormalMode}
+              specComponents={spec.spec.components as Record<string, unknown> | undefined}
+            />
+          )}
         </Box>
       )}
 
       <StatusBar
-        mode={mode}
+        mode={appState.mode}
         activePanel={panelNav.activePanel}
         position={`${panelNav.leftIndex + 1}/${flatList.length}`}
       />

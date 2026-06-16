@@ -3,6 +3,7 @@
 import React from 'react';
 import { withFullScreen } from 'fullscreen-ink';
 import { App } from './App.js';
+import { ServicesProvider } from './contexts/ServicesContext.js';
 import { resolveCollection, listCollections, setCollectionPath } from './utils/storage.js';
 
 const args = process.argv.slice(2);
@@ -112,7 +113,11 @@ async function main() {
     setCollectionPath(collection.path);
   }
 
-  const ink = withFullScreen(<App source={collection.source} collectionName={collection.name} />);
+  const ink = withFullScreen(
+    <ServicesProvider>
+      <App source={collection.source} collectionName={collection.name} />
+    </ServicesProvider>
+  );
   await ink.start();
   await ink.waitUntilExit();
 }
