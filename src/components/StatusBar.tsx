@@ -47,11 +47,13 @@ function getDynamicShortcuts(mode: 'browse' | 'tryit' | 'manual', activePanel?: 
       ];
     case 'manual':
       return [
-        { key: 'Tab', label: 'next field' },
+        { key: 'p', label: 'path' },
+        { key: 'm', label: 'method' },
+        { key: 'a', label: 'add param' },
         { key: 'e', label: 'execute' },
         { key: 's', label: 'save' },
-        { key: 'a', label: 'add row' },
-        { key: 'Esc', label: 'close' },
+        { key: 'd', label: 'delete' },
+        { key: 'Esc', label: 'cancel' },
       ];
     default:
       return [];

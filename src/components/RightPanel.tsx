@@ -9,7 +9,7 @@ import { ParametersSection } from './ParametersSection.js';
 import { HeadersSection } from './HeadersSection.js';
 import { ResponsesSection } from './ResponsesSection.js';
 import type { FlatListItem, RightPanelMode } from '../hooks/usePanelNavigation.js';
-import type { ResponseState, CustomParameter } from '../types/index.js';
+import type { ResponseState, CustomParameter, SavedRequest } from '../types/index.js';
 import { formatSchema, scaffoldPlaceholder } from '../utils/parser.js';
 
 interface RightPanelProps {
@@ -41,6 +41,9 @@ interface RightPanelProps {
   onResetConfirmResponse?: (confirmed: boolean) => void;
   onEditingChange?: (editing: boolean) => void;
   specComponents?: Record<string, unknown>;
+  manualMode?: boolean;
+  editingRequest?: SavedRequest;
+  onNormalModeChange?: (isNormal: boolean) => void;
 }
 
 // Flat param rows: 1 line each + 1 for optional enum row
@@ -75,6 +78,9 @@ export function RightPanel({
   onResetConfirmResponse,
   onEditingChange,
   specComponents,
+  manualMode = false,
+  editingRequest,
+  onNormalModeChange,
 }: RightPanelProps) {
   const [editingPath, setEditingPath] = useState(false);
   const [bodyTabFocused, setBodyTabFocused] = useState(false);
@@ -99,6 +105,10 @@ export function RightPanel({
     setVisualAnchor(0);
     setYankMessage(false);
   }, [response]);
+
+  useEffect(() => {
+    onNormalModeChange?.(!editingPath && !editingBody && !paramInsertMode && !headersInsertMode);
+  }, [editingPath, editingBody, paramInsertMode, headersInsertMode]);
 
   const setEditingBodyWithSignal = (val: boolean) => {
     setEditingBody(val);
@@ -170,8 +180,9 @@ export function RightPanel({
       }
 
       // 'm' to cycle method
-      if (input === 'm' && selectedItem?.type === 'endpoint') {
-        const currentMethod = (overrideMethod || selectedItem.endpoint!.method).toUpperCase() as HttpMethodType;
+      if (input === 'm' && (selectedItem?.type === 'endpoint' || manualMode)) {
+        const baseMethod = manualMode ? 'GET' : selectedItem!.endpoint!.method;
+        const currentMethod = (overrideMethod || baseMethod).toUpperCase() as HttpMethodType;
         const currentIndex = HTTP_METHODS.indexOf(currentMethod);
         const nextIndex = (currentIndex + 1) % HTTP_METHODS.length;
         onOverrideMethodChange?.(HTTP_METHODS[nextIndex]);
@@ -179,16 +190,15 @@ export function RightPanel({
       }
 
       // 'p' to edit path
-      if (input === 'p' && selectedItem?.type === 'endpoint') {
+      if (input === 'p' && (selectedItem?.type === 'endpoint' || manualMode)) {
         setEditingPath(true);
-        // Initialize override path if not set
-        if (!overridePath) {
-          onOverridePathChange?.(selectedItem.endpoint!.path);
+        if (!overridePath && !manualMode) {
+          onOverridePathChange?.(selectedItem!.endpoint!.path);
         }
         return;
       }
 
-      // 'r' to reset
+      // 'r' to reset (spec endpoints only)
       if (input === 'r' && selectedItem?.type === 'endpoint') {
         onResetOverrides?.();
         return;
@@ -201,6 +211,7 @@ export function RightPanel({
     (input, key) => {
       if (input === '\\' && response) {
         setResponseTab(prev => prev === 'response' ? 'request' : 'response');
+        onScrollChange?.(0);
         return;
       }
 
@@ -303,7 +314,138 @@ export function RightPanel({
   const handleBodyFocus = (totalParamRows: number) => {
     scrollToParamRow(totalParamRows);
   };
+  const renderManualTryit = () => {
+    const displayMethod = overrideMethod || 'GET';
+    const displayPath = overridePath ?? '';
+    const nonHeaderCustomParams = customParams.filter(p => p.in !== 'header');
+    const headerCustomParams = customParams.filter(p => p.in === 'header');
+
+    const handleHeadersChange = (updated: CustomParameter[]) => {
+      onCustomParamsChange?.([...nonHeaderCustomParams, ...updated]);
+    };
+
+    return (
+      <Box flexDirection="column">
+        {/* Header badge + method + path */}
+        <Box paddingX={1} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor="cyan" width="100%">
+          <Text bold backgroundColor="cyan" color="black">
+            {editingRequest ? ` EDITING: ${editingRequest.name} ` : ' MANUAL REQUEST '}
+          </Text>
+          <Text> </Text>
+          <Box>
+            <MethodBadge method={displayMethod} />
+            <Text dimColor> (m)</Text>
+          </Box>
+          <Text> </Text>
+          {editingPath ? (
+            <Box borderStyle="single" borderColor="green" flexGrow={1}>
+              <TextInput
+                value={displayPath}
+                onChange={(v) => onOverridePathChange?.(v)}
+                focus={true}
+              />
+            </Box>
+          ) : (
+            <Box flexGrow={1}>
+              <Text bold color={displayPath ? undefined : 'red'}>
+                {displayPath || '/path/required'}
+              </Text>
+              <Text dimColor> (p)</Text>
+            </Box>
+          )}
+        </Box>
+
+        {/* Action bar */}
+        {isActive && (
+          <Box justifyContent="flex-end" flexShrink={0}>
+            <Text dimColor>[ </Text>
+            <Text color="green" bold>Execute (e)</Text>
+            <Text dimColor> ][ </Text>
+            <Text color="cyan">Save (s)</Text>
+            <Text dimColor> ]</Text>
+            {editingRequest && (
+              <>
+                <Text dimColor>[ </Text>
+                <Text color="red">Delete (d)</Text>
+                <Text dimColor> ]</Text>
+              </>
+            )}
+            <Text dimColor>[ Cancel (Esc) ] </Text>
+          </Box>
+        )}
+
+        <Box flexDirection="column" paddingX={1} width="100%" marginTop={1}>
+          <HeadersSection
+            headers={headerCustomParams}
+            onChange={handleHeadersChange}
+            isActive={isActive && headersFocused}
+            onTabOut={() => setHeadersFocused(false)}
+            onTabBack={() => setHeadersFocused(false)}
+            onInsertModeChange={setHeadersInsertMode}
+          />
+          <Box marginTop={1} flexDirection="column" width="100%">
+            <ParametersSection
+              parameters={[]}
+              isTryItMode={true}
+              values={{}}
+              onChange={() => {}}
+              isActive={isActive && !bodyTabFocused && !editingBody && !headersFocused}
+              onFocusChange={handleParamFocusChange}
+              onTabOut={['POST', 'PUT', 'PATCH', 'DELETE'].includes(displayMethod.toUpperCase()) ? () => setBodyTabFocused(true) : undefined}
+              onTabBack={() => setHeadersFocused(true)}
+              resetKey={paramResetKey}
+              customParams={nonHeaderCustomParams}
+              onCustomParamsChange={(updated) => onCustomParamsChange?.([...updated, ...headerCustomParams])}
+              disabledParams={[]}
+              onDisabledParamsChange={() => {}}
+              onInsertModeChange={setParamInsertMode}
+            />
+          </Box>
+
+          {/* Body editor — only for methods that support a body */}
+          {['POST', 'PUT', 'PATCH', 'DELETE'].includes(displayMethod.toUpperCase()) && (
+            <Box flexDirection="column" flexShrink={0} marginTop={1}>
+              <Box>
+                <Text bold>BODY </Text>
+                <Text dimColor>application/json</Text>
+              </Box>
+              <Box borderStyle="round" borderColor={editingBody ? 'green' : bodyTabFocused ? 'cyan' : 'gray'} paddingX={1} flexDirection="column">
+                {!editingBody && !body ? (
+                  <Text dimColor>{bodyTabFocused ? 'i: edit  k: back' : 'j: focus  i: edit'}</Text>
+                ) : (
+                  <>
+                    <TextArea
+                      value={body}
+                      onChange={onBodyChange}
+                      onSubmit={() => setEditingBodyWithSignal(false)}
+                      focus={editingBody}
+                      viewportLines={10}
+                      onTab={(shift) => { if (!shift) onBodyChange(body + '  '); }}
+                      onFirstLineUp={() => setEditingBodyWithSignal(false)}
+                    />
+                    {editingBody && (
+                      <Text dimColor>Enter: done  Shift+Enter: newline  Esc: cancel</Text>
+                    )}
+                  </>
+                )}
+              </Box>
+            </Box>
+          )}
+
+          {/* Response */}
+          {response && (
+            <Box marginTop={1} flexShrink={0}>
+              {renderResponse()}
+            </Box>
+          )}
+        </Box>
+      </Box>
+    );
+  };
+
   const renderContent = () => {
+    if (manualMode) return renderManualTryit();
+
     if (!selectedItem) {
       return (
         <Box flexDirection="column" paddingX={1}>
@@ -412,7 +554,7 @@ export function RightPanel({
           );
         })()}
 
-        {isTryItMode && (
+        {isTryItMode && isActive && (
           <Box marginTop={0} justifyContent="flex-end" flexShrink={0}>
             {hasAnyOverride && (
               <>
@@ -421,7 +563,9 @@ export function RightPanel({
                 <Text dimColor> ] </Text>
               </>
             )}
-            <Text dimColor>[ Cancel (Esc) ] </Text>
+            <Text dimColor>[ </Text>
+            <Text color="green" bold>Execute (e)</Text>
+            <Text dimColor> ] [ Cancel (Esc) ] </Text>
           </Box>
         )}
 
@@ -563,62 +707,60 @@ export function RightPanel({
     const { method, path, name, queryParams, headers } = item.savedRequest!;
     const isTryItMode = mode === 'tryItOut';
 
+    // Convert saved KeyValuePairs to CustomParameter[] for use with the same components
+    const queryCustomParams: CustomParameter[] = (queryParams || []).map(p => ({
+      id: p.id, name: p.key, value: p.value, in: 'query' as const, enabled: p.enabled,
+    }));
+    const headerCustomParams: CustomParameter[] = (headers || []).map(h => ({
+      id: h.id, name: h.key, value: h.value, in: 'header' as const, enabled: h.enabled,
+    }));
+
     return (
       <Box flexDirection="column">
         {/* Header */}
-        <Box paddingX={1} paddingY={1} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor="gray" width="100%">
+        <Box paddingX={1} borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} borderColor="gray" width="100%">
           <Text color="yellow">* </Text>
           <MethodBadge method={method} />
           <Text bold> {path}</Text>
           <Box marginLeft={2}>
             <Text dimColor>SAVED</Text>
           </Box>
-          {isTryItMode && (
-            <Box marginLeft={2}>
-              <Text color="green" bold>TRY IT OUT</Text>
-            </Box>
-          )}
         </Box>
 
-        {/* Content */}
+        {/* Actions */}
+        {isActive && (
+          <Box justifyContent="flex-end" flexShrink={0}>
+            <Text dimColor>[ Edit (E) ] [ Delete (D) ] </Text>
+            <Text color="cyan">[ Try it out (t) ]</Text>
+          </Box>
+        )}
+
+        {/* Content — same layout as spec endpoint */}
         <Box flexDirection="column" paddingX={1} width="100%">
-          <Box width="100%">
+          <Box flexShrink={0}>
             <Text bold>{name}</Text>
           </Box>
 
-          {/* Query params */}
-          {queryParams && queryParams.length > 0 && (
-            <Box flexDirection="column" width="100%">
-              <Text bold dimColor>QUERY</Text>
-              {queryParams.filter(p => p.key).map(p => (
-                <Box key={p.id} paddingLeft={1} width="100%">
-                  <Text>{p.key}: </Text>
-                  <Text color="green">{p.value}</Text>
-                </Box>
-              ))}
+          <Box flexShrink={0} width="100%" marginTop={1} flexDirection="column">
+            <HeadersSection
+              headers={headerCustomParams}
+              onChange={() => {}}
+              isActive={false}
+              onInsertModeChange={() => {}}
+            />
+            <Box marginTop={1} flexDirection="column" width="100%">
+              <ParametersSection
+                parameters={[]}
+                isTryItMode={false}
+                values={{}}
+                customParams={queryCustomParams}
+                onCustomParamsChange={() => {}}
+                disabledParams={[]}
+                onDisabledParamsChange={() => {}}
+                onInsertModeChange={() => {}}
+              />
             </Box>
-          )}
-
-          {/* Headers */}
-          {headers && headers.length > 0 && (
-            <Box flexDirection="column" width="100%">
-              <Text bold dimColor>HEADERS</Text>
-              {headers.filter(h => h.key).map(h => (
-                <Box key={h.id} paddingLeft={1} width="100%">
-                  <Text>{h.key}: </Text>
-                  <Text color="green">{h.value}</Text>
-                </Box>
-              ))}
-            </Box>
-          )}
-
-          {/* Actions */}
-          {isActive && (
-            <Box justifyContent="flex-end" width="100%">
-              <Text dimColor>[ Edit (E) ] [ Delete (D) ] </Text>
-              <Text color="cyan">[ Try it out (t) ]</Text>
-            </Box>
-          )}
+          </Box>
 
           {/* Response */}
           {response && (

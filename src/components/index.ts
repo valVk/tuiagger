@@ -7,7 +7,7 @@ export * from './ParametersSection.js';
 export * from './HeadersSection.js';
 export * from './ResponsesSection.js';
 export * from './KeyValueEditor.js';
-export * from './ManualRequest.js';
+export * from './ManualSaveDialog.js';
 export * from './Spinner.js';
 export * from './LeftPanel.js';
 export * from './RightPanel.js';
