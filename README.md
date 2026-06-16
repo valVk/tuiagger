@@ -48,6 +48,13 @@ brew tap valVK/twagger
 brew install twagger
 ```
 
+### Uninstall
+
+```bash
+brew uninstall twagger
+brew untap valVK/twagger
+```
+
 ### From source
 
 ```bash
