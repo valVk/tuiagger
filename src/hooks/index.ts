@@ -6,3 +6,4 @@ export * from './usePanelNavigation.js';
 export * from './useOverrides.js';
 export * from './useAuth.js';
 export * from './useEnvironments.js';
+export * from './useParamNavigation.js';
