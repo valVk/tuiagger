@@ -37,6 +37,8 @@ interface UseRightPanelKeyboardResult {
   paramInsertMode: boolean;
   headersFocused: boolean;
   headersInsertMode: boolean;
+  setBodyTabFocused: (v: boolean) => void;
+  setEditingBodyWithSignal: (v: boolean) => void;
   setHeadersFocused: (v: boolean) => void;
   setParamInsertMode: (v: boolean) => void;
   setHeadersInsertMode: (v: boolean) => void;
@@ -161,6 +163,8 @@ export function useRightPanelKeyboard({
     paramInsertMode,
     headersFocused,
     headersInsertMode,
+    setBodyTabFocused,
+    setEditingBodyWithSignal,
     setHeadersFocused,
     setParamInsertMode,
     setHeadersInsertMode,
