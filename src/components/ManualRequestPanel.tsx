@@ -1,14 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
+import React from 'react';
+import { Box, Text } from 'ink';
 import TextInput from 'ink-text-input';
 import { TextArea } from 'react-ink-textarea';
-import type { HttpMethodType, ResponseState, CustomParameter, SavedRequest } from '../types/index.js';
+import type { ResponseState, CustomParameter, SavedRequest } from '../types/index.js';
 import { MethodBadge } from './MethodBadge.js';
 import { ParametersSection } from './ParametersSection.js';
 import { HeadersSection } from './HeadersSection.js';
 import { ResponseViewer } from './ResponseViewer.js';
-
-const HTTP_METHODS: HttpMethodType[] = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+import { useManualPanelKeyboard } from '../hooks/useManualPanelKeyboard.js';
 
 interface ManualRequestPanelProps {
   path: string;
@@ -49,16 +48,26 @@ export function ManualRequestPanel({
   onNormalModeChange,
   onScrollReset,
 }: ManualRequestPanelProps) {
-  const [editingPath, setEditingPath] = useState(false);
-  const [bodyTabFocused, setBodyTabFocused] = useState(false);
-  const [editingBody, setEditingBody] = useState(false);
-  const [paramInsertMode, setParamInsertMode] = useState(false);
-  const [headersFocused, setHeadersFocused] = useState(false);
-  const [headersInsertMode, setHeadersInsertMode] = useState(false);
-
-  useEffect(() => {
-    onNormalModeChange?.(!editingPath && !editingBody && !paramInsertMode && !headersInsertMode);
-  }, [editingPath, editingBody, paramInsertMode, headersInsertMode]);
+  const {
+    editingPath,
+    bodyTabFocused,
+    editingBody,
+    paramInsertMode,
+    headersFocused,
+    headersInsertMode,
+    setEditingBody,
+    setBodyTabFocused,
+    setParamInsertMode,
+    setHeadersFocused,
+    setHeadersInsertMode,
+  } = useManualPanelKeyboard({
+    isActive,
+    method: method || 'GET',
+    path: path ?? '',
+    onMethodChange,
+    onPathChange,
+    onNormalModeChange,
+  });
 
   const nonHeaderParams = customParams.filter(p => p.in !== 'header');
   const headerParams = customParams.filter(p => p.in === 'header');
@@ -69,41 +78,6 @@ export function ManualRequestPanel({
 
   const displayMethod = method || 'GET';
   const displayPath = path ?? '';
-
-  useInput(
-    (input, key) => {
-      if (!isActive) return;
-
-      if (editingPath) {
-        if (key.escape || key.return) setEditingPath(false);
-        return;
-      }
-      if (editingBody) {
-        if (key.escape) setEditingBody(false);
-        return;
-      }
-      if (paramInsertMode || headersInsertMode) return;
-      if (headersFocused) return;
-
-      if (bodyTabFocused) {
-        if (input === 'i') { setEditingBody(true); return; }
-        if (input === 'k' || key.upArrow || key.escape) { setBodyTabFocused(false); return; }
-        return;
-      }
-
-      if (input === 'm') {
-        const currentIndex = HTTP_METHODS.indexOf(displayMethod.toUpperCase() as HttpMethodType);
-        onMethodChange(HTTP_METHODS[(currentIndex + 1) % HTTP_METHODS.length]);
-        return;
-      }
-
-      if (input === 'p') {
-        setEditingPath(true);
-        return;
-      }
-    },
-    { isActive }
-  );
 
   if (isLoading) {
     return (
