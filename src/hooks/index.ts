@@ -13,3 +13,4 @@ export * from './useServersKeyboard.js';
 export * from './useAuthKeyboard.js';
 export * from './useEnvironmentsKeyboard.js';
 export * from './useRightPanelKeyboard.js';
+export * from './useManualPanelKeyboard.js';
