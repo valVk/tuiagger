@@ -12,3 +12,4 @@ export * from './useHeadersNavigation.js';
 export * from './useServersKeyboard.js';
 export * from './useAuthKeyboard.js';
 export * from './useEnvironmentsKeyboard.js';
+export * from './useRightPanelKeyboard.js';
