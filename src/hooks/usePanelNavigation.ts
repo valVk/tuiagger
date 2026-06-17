@@ -4,7 +4,7 @@ import type { ParsedEndpoint } from '../utils/parser.js';
 import type { SavedRequest } from '../types/index.js';
 
 export type ActivePanel = 'left' | 'right';
-export type RightPanelMode = 'details' | 'tryItOut' | 'response' | 'manualRequest';
+export type RightPanelMode = 'details' | 'tryItOut';
 
 export interface FlatListItem {
   type: 'tag' | 'endpoint' | 'savedRequest';
