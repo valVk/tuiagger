@@ -1,4 +1,4 @@
-# Tuiagger
+# TUIagger
 
 A terminal-based UI for viewing and interacting with OpenAPI/Swagger documentation. Navigate endpoints, execute requests, and manage API collections - all without leaving the terminal.
 
