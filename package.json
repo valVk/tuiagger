@@ -1,11 +1,11 @@
 {
-  "name": "twagger",
+  "name": "tuiagger",
   "version": "1.0.0",
   "description": "TUI Swagger/OpenAPI Documentation Viewer",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "twagger": "dist/index.js"
+    "tuiagger": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

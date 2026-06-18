@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { getCollectionPath } from './collectionResolver.js';
 import type { SavedRequest, SavedRequestsStore, CustomTag, OverridesStore, EndpointOverride, CustomParameter, AuthStore, EnvironmentsStore } from '../types/index.js';
 
-const STORAGE_DIR = '.twagger';
+const STORAGE_DIR = '.tuiagger';
 const STORAGE_FILE = 'saved-requests.json';
 const OVERRIDES_FILE = 'overrides.json';
 const AUTH_FILE = 'auth.json';

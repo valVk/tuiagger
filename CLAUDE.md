@@ -1,10 +1,10 @@
-# Twagger - TUI Swagger/OpenAPI Documentation Viewer
+# Tuiagger - TUI Swagger/OpenAPI Documentation Viewer
 
 A terminal-based user interface for viewing and interacting with OpenAPI/Swagger documentation.
 
 ## Project Overview
 
-Twagger is a CLI application that renders OpenAPI specifications in an interactive terminal interface. It uses a two-panel layout optimized for terminal navigation, with tag-based grouping and a fully functional "Try it out" feature for executing API requests directly from the terminal.
+Tuiagger is a CLI application that renders OpenAPI specifications in an interactive terminal interface. It uses a two-panel layout optimized for terminal navigation, with tag-based grouping and a fully functional "Try it out" feature for executing API requests directly from the terminal.
 
 ## Tech Stack
 
@@ -22,7 +22,7 @@ Twagger is a CLI application that renders OpenAPI specifications in an interacti
 ## Project Structure
 
 ```
-twagger/
+tuiagger/
 ├── src/
 │   ├── index.tsx                 # Entry point, CLI argument handling
 │   ├── App.tsx                   # Main application component, two-panel layout
@@ -139,7 +139,7 @@ Application:
 ### Manual Request Builder
 - Press `m` to create custom requests not in the spec
 - Assign to existing or custom tags
-- Save for reuse (stored in `.twagger/saved-requests.json`)
+- Save for reuse (stored in `.tuiagger/saved-requests.json`)
 - Saved requests marked with `*` in the left panel
 
 ### Method Badge Colors
@@ -157,32 +157,32 @@ Application:
 ## CLI Usage
 
 ```bash
-# Load from collection (stored in ~/.twagger/<name>/)
-twagger <collection-name>
+# Load from collection (stored in ~/.tuiagger/<name>/)
+tuiagger <collection-name>
 
 # Load from file path or URL
-twagger <spec-path-or-url>
+tuiagger <spec-path-or-url>
 
 # List available collections
-twagger --list
+tuiagger --list
 
 # Examples
-twagger PetStore                                           # Uses ~/.twagger/PetStore/openapi.json
-twagger ./openapi.json                                     # Local file
-twagger https://petstore3.swagger.io/api/v3/openapi.json  # URL
+tuiagger PetStore                                           # Uses ~/.tuiagger/PetStore/openapi.json
+tuiagger ./openapi.json                                     # Local file
+tuiagger https://petstore3.swagger.io/api/v3/openapi.json  # URL
 ```
 
 ## Collections
 
-Collections are stored in `~/.twagger/<name>/` directories. Each collection directory should contain an OpenAPI spec file (JSON or YAML).
+Collections are stored in `~/.tuiagger/<name>/` directories. Each collection directory should contain an OpenAPI spec file (JSON or YAML).
 
 ```bash
 # Create a collection
-mkdir -p ~/.twagger/MyAPI
-cp openapi.json ~/.twagger/MyAPI/
+mkdir -p ~/.tuiagger/MyAPI
+cp openapi.json ~/.tuiagger/MyAPI/
 
 # List collections
-twagger --list
+tuiagger --list
 ```
 
 ## Test Data

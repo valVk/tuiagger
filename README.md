@@ -1,4 +1,4 @@
-# Twagger
+# Tuiagger
 
 A terminal-based UI for viewing and interacting with OpenAPI/Swagger documentation. Navigate endpoints, execute requests, and manage API collections - all without leaving the terminal.
 
@@ -31,7 +31,7 @@ A terminal-based UI for viewing and interacting with OpenAPI/Swagger documentati
 - **Two-panel layout** - scrollable endpoint list on the left, details on the right
 - **Try it out** - execute requests directly from the terminal with live responses
 - **Manual request builder** - create and save custom requests not in the spec
-- **Collections** - store named API specs in `~/.twagger/` for quick access
+- **Collections** - store named API specs in `~/.tuiagger/` for quick access
 - **Environments** - named variable sets (`dev`, `staging`, `prod`) with `{{variable}}` interpolation
 - **Faker interpolation** - generate realistic test data with `{{faker.internet.email()}}` syntax
 - **Auth support** - configure Bearer token, Basic auth, or API key in the info panel
@@ -44,61 +44,61 @@ A terminal-based UI for viewing and interacting with OpenAPI/Swagger documentati
 ### Homebrew (macOS)
 
 ```bash
-brew tap valVK/twagger
-brew install twagger
+brew tap valVK/tuiagger
+brew install tuiagger
 ```
 
 ### Uninstall
 
 ```bash
-brew uninstall twagger
-brew untap valVK/twagger
+brew uninstall tuiagger
+brew untap valVK/tuiagger
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/valVK/twagger
-cd twagger
+git clone https://github.com/valVK/tuiagger
+cd tuiagger
 npm install
 npm run build
-npm link        # makes `twagger` available globally
+npm link        # makes `tuiagger` available globally
 ```
 
 ## Usage
 
 ```bash
 # Load a saved collection
-twagger PetStore
+tuiagger PetStore
 
 # Load from a local file
-twagger ./openapi.json
+tuiagger ./openapi.json
 
 # Load from a URL
-twagger https://petstore3.swagger.io/api/v3/openapi.json
+tuiagger https://petstore3.swagger.io/api/v3/openapi.json
 
 # List saved collections
-twagger --list
+tuiagger --list
 ```
 
 ## Collections
 
-Collections are directories under `~/.twagger/<name>/` containing an OpenAPI spec file.
+Collections are directories under `~/.tuiagger/<name>/` containing an OpenAPI spec file.
 
 ```bash
 # Create a collection
-mkdir -p ~/.twagger/MyAPI
-cp openapi.json ~/.twagger/MyAPI/
+mkdir -p ~/.tuiagger/MyAPI
+cp openapi.json ~/.tuiagger/MyAPI/
 
 # Open it
-twagger MyAPI
+tuiagger MyAPI
 ```
 
 Saved manual requests and auth/environment config are stored per-collection.
 
 ## Keyboard Shortcuts
 
-Press `?` inside twagger to open the full interactive cheatsheet.
+Press `?` inside tuiagger to open the full interactive cheatsheet.
 
 ### Global
 

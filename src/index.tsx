@@ -10,16 +10,16 @@ const args = process.argv.slice(2);
 
 function showHelp() {
   console.log(`
-twagger - TUI Swagger/OpenAPI Documentation Viewer
+tuiagger - TUI Swagger/OpenAPI Documentation Viewer
 
 Usage:
-  twagger <collection>           Load from ~/.twagger/<collection>/
-  twagger <spec-path-or-url>     Load from file path or URL
+  tuiagger <collection>           Load from ~/.tuiagger/<collection>/
+  tuiagger <spec-path-or-url>     Load from file path or URL
 
 Examples:
-  twagger PetStore
-  twagger ./openapi.json
-  twagger https://petstore3.swagger.io/api/v3/openapi.json
+  tuiagger PetStore
+  tuiagger ./openapi.json
+  tuiagger https://petstore3.swagger.io/api/v3/openapi.json
 
 Options:
   --help, -h     Show this help message
@@ -55,16 +55,16 @@ Keyboard Shortcuts:
 }
 
 function showVersion() {
-  console.log('twagger v1.0.0');
+  console.log('tuiagger v1.0.0');
 }
 
 async function showCollections() {
   const collections = await listCollections();
   if (collections.length === 0) {
-    console.log('No collections found in ~/.twagger/');
+    console.log('No collections found in ~/.tuiagger/');
     console.log('\nTo create a collection:');
-    console.log('  mkdir -p ~/.twagger/MyAPI');
-    console.log('  cp openapi.json ~/.twagger/MyAPI/');
+    console.log('  mkdir -p ~/.tuiagger/MyAPI');
+    console.log('  cp openapi.json ~/.tuiagger/MyAPI/');
   } else {
     console.log('Available collections:\n');
     for (const name of collections) {
@@ -101,7 +101,7 @@ async function main() {
   const collection = await resolveCollection(input);
 
   if (!collection) {
-    console.error(`Error: Collection "${input}" not found in ~/.twagger/\n`);
+    console.error(`Error: Collection "${input}" not found in ~/.tuiagger/\n`);
     console.error('Make sure the directory exists and contains an OpenAPI spec file (JSON/YAML).\n');
     await showCollections();
     process.exit(1);

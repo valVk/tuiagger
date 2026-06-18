@@ -2,7 +2,7 @@ import { readdir, access } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 
-const STORAGE_DIR = '.twagger';
+const STORAGE_DIR = '.tuiagger';
 
 let currentCollectionPath: string | null = null;
 
