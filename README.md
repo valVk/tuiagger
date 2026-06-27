@@ -1,5 +1,7 @@
 # TUIagger
 
+> Pronounced **"TOO-ee-agger"** — TUI ("tooey") + agger (from sw**agger**).
+
 A terminal-based UI for viewing and interacting with OpenAPI/Swagger documentation. Navigate endpoints, execute requests, and manage API collections - all without leaving the terminal.
 
 <div align="center">
