@@ -2,29 +2,12 @@
 
 A terminal-based UI for viewing and interacting with OpenAPI/Swagger documentation. Navigate endpoints, execute requests, and manage API collections - all without leaving the terminal.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Swagger Petstore v3.0                    Server: [petstore3.swagger.io ▼]  │
-├────────────────────────────┬────────────────────────────────────────────────┤
-│  ENDPOINTS                 │  GET /pet/findByStatus                         │
-│                            │  Find Pets by status                           │
-│  ▼ pet (8)                 ├────────────────────────────────────────────────┤
-│    PUT    /pet             │                                                │
-│    POST   /pet             │  Multiple status values can be provided with   │
-│  > GET    /pet/findByStat  │  comma separated strings                       │
-│    GET    /pet/findByTags  │                                                │
-│    GET    /pet/{petId}     │  PARAMETERS                                    │
-│    POST   /pet/{petId}     │  ┌────────────────────────────────────────────┐│
-│    DELETE /pet/{petId}     │  │ status * (query)              string       ││
-│    POST   /pet/{petId}/..  │  │ Status values for filter                   ││
-│                            │  │ Enum: available | pending | sold           ││
-│  ▶ store (4)               │  └────────────────────────────────────────────┘│
-│  ▶ user (8)                │                                                │
-│                            │                          [ Try it out (t) ]    │
-├────────────────────────────┴────────────────────────────────────────────────┤
-│  q:quit  i:info  ?:help  Ctrl+r:reload          h/l:panels  j/k:scroll     │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+<div align="center">
+  <picture>
+    <img alt="TUIagger Screenshot" src="./img/demo_ui.png" width="800">
+  </picture>
+</div>
+
 
 ## Features
 
