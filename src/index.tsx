@@ -5,6 +5,7 @@ import { withFullScreen } from 'fullscreen-ink';
 import { App } from './App.js';
 import { ServicesProvider } from './contexts/ServicesContext.js';
 import { resolveCollection, listCollections, setCollectionPath } from './utils/collectionResolver.js';
+import { runInit } from './init.js';
 
 const args = process.argv.slice(2);
 
@@ -15,11 +16,13 @@ tuiagger - TUI Swagger/OpenAPI Documentation Viewer
 Usage:
   tuiagger <collection>           Load from ~/.tuiagger/<collection>/
   tuiagger <spec-path-or-url>     Load from file path or URL
+  tuiagger init <name>            Create a new collection interactively
 
 Examples:
   tuiagger PetStore
   tuiagger ./openapi.json
   tuiagger https://petstore3.swagger.io/api/v3/openapi.json
+  tuiagger init PetStore
 
 Options:
   --help, -h     Show this help message
@@ -87,6 +90,11 @@ async function main() {
 
   if (args.includes('--list') || args.includes('-l')) {
     await showCollections();
+    process.exit(0);
+  }
+
+  if (args[0] === 'init') {
+    await runInit(args[1]);
     process.exit(0);
   }
 
