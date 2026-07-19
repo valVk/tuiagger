@@ -25,4 +25,6 @@ npm-debug.log*
 .env
 .env.local
 
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/skills/**
