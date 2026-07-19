@@ -16,7 +16,13 @@ type ManualState = {
   showSaveDialog: boolean;
 };
 
-type AppState = { mode: 'browse' | 'tryit' } | ManualState;
+type RenameTagState = {
+  mode: 'renameTag';
+  tagName: string;
+  value: string;
+};
+
+type AppState = { mode: 'browse' | 'tryit' } | ManualState | RenameTagState;
 
 interface PanelNav {
   setActivePanel: (panel: ActivePanel) => void;
@@ -27,6 +33,9 @@ interface PanelNav {
 interface SavedRequestsHook {
   remove: (id: string) => Promise<boolean>;
   createTag: (tag: { name: string }) => Promise<unknown>;
+  renameTag: (oldName: string, newName: string) => Promise<boolean>;
+  deleteTag: (name: string) => Promise<void>;
+  customTags: { name: string }[];
 }
 
 interface RequestHook {
@@ -66,6 +75,8 @@ interface UseAppKeyboardOptions {
   setShowResetConfirm: (v: boolean) => void;
   executeCurrentEndpoint: () => Promise<void>;
   handleManualExecuteFromState: () => Promise<void>;
+  tagDeleteConfirm: string | null;
+  setTagDeleteConfirm: (v: string | null) => void;
 }
 
 export function useAppKeyboard({
@@ -88,11 +99,35 @@ export function useAppKeyboard({
   setShowResetConfirm,
   executeCurrentEndpoint,
   handleManualExecuteFromState,
+  tagDeleteConfirm,
+  setTagDeleteConfirm,
 }: UseAppKeyboardOptions) {
   // Browse-mode keyboard handler
   useInput(
-    (input, _key) => {
+    (input, key) => {
       if (appState.mode !== 'browse') return;
+
+      if (tagDeleteConfirm) {
+        if (input === 'y') {
+          void savedRequests.deleteTag(tagDeleteConfirm);
+          setTagDeleteConfirm(null);
+        } else if (input === 'n' || key.escape) {
+          setTagDeleteConfirm(null);
+        }
+        return;
+      }
+
+      const isCustomTag = selectedItem?.type === 'tag' && savedRequests.customTags.some(t => t.name === selectedItem.tagName);
+
+      if (input === 'R' && isCustomTag) {
+        setAppState({ mode: 'renameTag', tagName: selectedItem!.tagName, value: selectedItem!.tagName });
+        return;
+      }
+
+      if (input === 'D' && isCustomTag) {
+        setTagDeleteConfirm(selectedItem!.tagName);
+        return;
+      }
 
       if (input === 'm') {
         setAppState({ mode: 'manual', path: '', method: 'GET', customParams: [], body: '', showSaveDialog: false });
@@ -203,4 +238,14 @@ export function useAppKeyboard({
     { isActive: appState.mode === 'tryit' || appState.mode === 'manual' }
   );
 
+  // Rename-tag mode: Esc cancels; Enter/submit is handled by the TextInput itself.
+  useInput(
+    (_input, key) => {
+      if (appState.mode !== 'renameTag') return;
+      if (key.escape) {
+        setAppState({ mode: 'browse' });
+      }
+    },
+    { isActive: appState.mode === 'renameTag' }
+  );
 }

@@ -152,6 +152,8 @@ Left Panel:
   Enter         - Expand/collapse tag
   g / G         - First / last item
   c / x         - Collapse / expand all tags
+  R             - Rename tag (custom tags only)
+  D             - Delete tag, with confirm if non-empty (custom tags only)
 
 Right Panel (browse):
   j / k         - Scroll content
@@ -217,9 +219,10 @@ Manual Request (m):
 
 ### Manual Request Builder
 - Press `m` to create custom requests not defined in the spec
-- Assign to existing or new custom tags
+- Assign to existing or new custom tags, or leave untagged (goes to the `default` tag)
 - Save for reuse (stored in `.tuiagger/saved-requests.json`)
 - Saved requests appear with `*` in the left panel
+- Custom tags can be renamed (`R`) or deleted (`D`, with confirmation) from the left panel; spec-derived tags and `default` are read-only
 
 ### Environments
 - Create named variable sets (e.g. `dev`, `staging`, `prod`) in the info panel

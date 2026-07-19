@@ -8,9 +8,11 @@ import { HeadersSection } from './HeadersSection.js';
 import { ResponsesSection } from './ResponsesSection.js';
 import { ResponseViewer } from './ResponseViewer.js';
 import type { FlatListItem, RightPanelMode } from '../hooks/usePanelNavigation.js';
-import type { ResponseState, CustomParameter } from '../types/index.js';
+import type { ResponseState, CustomParameter, SavedRequest } from '../types/index.js';
 import { formatSchema, scaffoldPlaceholder } from '../utils/parser.js';
 import { useRightPanelKeyboard } from '../hooks/useRightPanelKeyboard.js';
+import type { ParsedEndpoint } from '../utils/parser.js';
+import { getMethodColor } from '../utils/colors.js';
 
 interface RightPanelProps {
   selectedItem: FlatListItem | null;
@@ -40,6 +42,13 @@ interface RightPanelProps {
   onEditingChange?: (editing: boolean) => void;
   specComponents?: Record<string, unknown>;
   onNormalModeChange?: (isNormal: boolean) => void;
+  renamingTag?: { tagName: string; value: string } | null;
+  onRenamingTagChange?: (value: string) => void;
+  onRenamingTagSubmit?: (tagName: string, value: string) => void;
+  tagDeleteConfirm?: { tagName: string; count: number } | null;
+  customTagNames?: string[];
+  tagEndpoints?: ParsedEndpoint[];
+  tagSavedRequests?: SavedRequest[];
 }
 
 
@@ -71,6 +80,13 @@ export function RightPanel({
   onEditingChange,
   specComponents,
   onNormalModeChange,
+  renamingTag,
+  onRenamingTagChange,
+  onRenamingTagSubmit,
+  tagDeleteConfirm,
+  customTagNames = [],
+  tagEndpoints = [],
+  tagSavedRequests = [],
 }: RightPanelProps) {
   const {
     editingPath,
@@ -117,10 +133,57 @@ export function RightPanel({
     }
 
     if (selectedItem.type === 'tag') {
+      const isRenamingThis = renamingTag?.tagName === selectedItem.tagName;
+      const isDeletingThis = tagDeleteConfirm?.tagName === selectedItem.tagName;
+      const isCustomTag = customTagNames.includes(selectedItem.tagName);
+
       return (
         <Box flexDirection="column" paddingX={1}>
-          <Text bold>{selectedItem.tagName}</Text>
-          <Text dimColor> — press Enter to expand/collapse</Text>
+          {isDeletingThis && (
+            <Box paddingX={1} paddingY={1} borderStyle="double" borderColor="yellow" width="100%" marginBottom={1}>
+              <Text color="yellow" bold>
+                {tagDeleteConfirm!.count > 0
+                  ? `Delete tag "${tagDeleteConfirm!.tagName}" and its ${tagDeleteConfirm!.count} request(s)? (y/n)`
+                  : `Delete tag "${tagDeleteConfirm!.tagName}"? (y/n)`}
+              </Text>
+            </Box>
+          )}
+          {isRenamingThis ? (
+            <Box>
+              <Text bold color="cyan">Rename: </Text>
+              <TextInput
+                value={renamingTag!.value}
+                onChange={(v) => onRenamingTagChange?.(v)}
+                onSubmit={(v) => onRenamingTagSubmit?.(renamingTag!.tagName, v)}
+                focus={true}
+              />
+            </Box>
+          ) : (
+            <Text bold>{selectedItem.tagName}</Text>
+          )}
+          <Text dimColor>
+            {' '}— Enter: expand/collapse
+            {!isRenamingThis && isCustomTag ? '  R: rename  D: delete' : ''}
+          </Text>
+
+          {(tagEndpoints.length > 0 || tagSavedRequests.length > 0) && (
+            <Box flexDirection="column" marginTop={1}>
+              {tagEndpoints.map(ep => (
+                <Box key={`${ep.method}-${ep.path}`}>
+                  <Text color={getMethodColor(ep.method)} bold>{ep.method.toUpperCase().padEnd(7)}</Text>
+                  <Text>{ep.path}</Text>
+                </Box>
+              ))}
+              {tagSavedRequests.map(sr => (
+                <Box key={sr.id}>
+                  <Text color="yellow">* </Text>
+                  <Text color={getMethodColor(sr.method)} bold>{sr.method.toUpperCase().padEnd(7)}</Text>
+                  <Text>{sr.path}</Text>
+                  <Text dimColor>  {sr.name}</Text>
+                </Box>
+              ))}
+            </Box>
+          )}
         </Box>
       );
     }

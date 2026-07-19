@@ -14,14 +14,16 @@ type DialogFocus = 'name' | 'tag' | 'newTag';
 
 export function ManualSaveDialog({ availableTags, initialName = '', initialTag, onSave, onCancel }: ManualSaveDialogProps) {
   const [name, setName] = useState(initialName);
+  // "default" always leads the list so a request can be saved without picking a tag.
+  const tags = availableTags.includes('default') ? availableTags : ['default', ...availableTags];
   const [tagIndex, setTagIndex] = useState(() =>
-    initialTag ? Math.max(0, availableTags.indexOf(initialTag)) : 0
+    initialTag ? Math.max(0, tags.indexOf(initialTag)) : 0
   );
   const [focus, setFocus] = useState<DialogFocus>('name');
   const [newTagMode, setNewTagMode] = useState(false);
   const [newTagName, setNewTagName] = useState('');
 
-  const currentTag = newTagMode ? newTagName : (availableTags[tagIndex] ?? '');
+  const currentTag = newTagMode ? newTagName : (tags[tagIndex] ?? '');
 
   useInput((input, key) => {
     if (key.escape) {
@@ -48,7 +50,7 @@ export function ManualSaveDialog({ availableTags, initialName = '', initialTag, 
         return;
       }
       if (key.rightArrow) {
-        if (tagIndex < availableTags.length - 1) {
+        if (tagIndex < tags.length - 1) {
           setTagIndex(i => i + 1);
         } else {
           setNewTagMode(true);

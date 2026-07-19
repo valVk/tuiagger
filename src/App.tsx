@@ -42,7 +42,13 @@ type ManualState = {
   showSaveDialog: boolean;
 };
 
-type AppState = { mode: 'browse' | 'tryit' } | ManualState;
+type RenameTagState = {
+  mode: 'renameTag';
+  tagName: string;
+  value: string;
+};
+
+type AppState = { mode: 'browse' | 'tryit' } | ManualState | RenameTagState;
 
 export function App({ source, collectionName }: AppProps) {
   const { exit } = useApp();
@@ -67,6 +73,7 @@ export function App({ source, collectionName }: AppProps) {
   const [overridePath, setOverridePath] = useState<string | undefined>();
   const [overrideMethod, setOverrideMethod] = useState<string | undefined>();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [tagDeleteConfirm, setTagDeleteConfirm] = useState<string | null>(null);
 
   const [showInfoPopup, setShowInfoPopup] = useState(false);
   const [showHelpPopup, setShowHelpPopup] = useState(false);
@@ -246,12 +253,22 @@ export function App({ source, collectionName }: AppProps) {
     setShowResetConfirm,
     executeCurrentEndpoint,
     handleManualExecuteFromState,
+    tagDeleteConfirm,
+    setTagDeleteConfirm,
   });
+
+  const handleRenameTagSubmit = useCallback(async (tagName: string, value: string) => {
+    const newName = value.trim();
+    if (newName && newName !== tagName) {
+      await savedRequests.renameTag(tagName, newName);
+    }
+    setAppState({ mode: 'browse' });
+  }, [savedRequests]);
 
   const handleManualSaveFromDialog = async (name: string, tag: string) => {
     const manual = appState as ManualState;
 
-    if (!spec?.tags.includes(tag)) {
+    if (tag !== 'default' && !spec?.tags.includes(tag)) {
       await savedRequests.createTag({ name: tag });
     }
 
@@ -432,6 +449,15 @@ export function App({ source, collectionName }: AppProps) {
               onResetConfirmResponse={handleResetConfirmResponse}
               onNormalModeChange={setRightPanelNormalMode}
               specComponents={spec.spec.components as Record<string, unknown> | undefined}
+              renamingTag={appState.mode === 'renameTag' ? { tagName: appState.tagName, value: appState.value } : null}
+              onRenamingTagChange={(value) => {
+                if (appState.mode === 'renameTag') setAppState({ ...appState, value });
+              }}
+              onRenamingTagSubmit={handleRenameTagSubmit}
+              tagDeleteConfirm={tagDeleteConfirm ? { tagName: tagDeleteConfirm, count: savedRequests.getRequestsByTag(tagDeleteConfirm).length } : null}
+              customTagNames={savedRequests.customTags.map(t => t.name)}
+              tagEndpoints={selectedItem?.type === 'tag' ? (endpointsByTag.get(selectedItem.tagName) || []) : undefined}
+              tagSavedRequests={selectedItem?.type === 'tag' ? savedRequests.getRequestsByTag(selectedItem.tagName) : undefined}
             />
           )}
         </Box>

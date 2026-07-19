@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import { useScreenSize } from 'fullscreen-ink';
 
 interface StatusBarProps {
-  mode: 'browse' | 'tryit' | 'manual';
+  mode: 'browse' | 'tryit' | 'manual' | 'renameTag';
   activePanel?: 'left' | 'right';
   filter?: string;
   position?: string;
@@ -17,7 +17,7 @@ const STATIC_SHORTCUTS = [
   { key: 'Ctrl+r', label: 'reload' },
 ];
 
-function getDynamicShortcuts(mode: 'browse' | 'tryit' | 'manual', activePanel?: 'left' | 'right') {
+function getDynamicShortcuts(mode: 'browse' | 'tryit' | 'manual' | 'renameTag', activePanel?: 'left' | 'right') {
   switch (mode) {
     case 'browse':
       if (activePanel === 'left') return [
@@ -53,6 +53,11 @@ function getDynamicShortcuts(mode: 'browse' | 'tryit' | 'manual', activePanel?: 
         { key: 'e', label: 'execute' },
         { key: 's', label: 'save' },
         { key: 'd', label: 'delete' },
+        { key: 'Esc', label: 'cancel' },
+      ];
+    case 'renameTag':
+      return [
+        { key: 'Enter', label: 'save' },
         { key: 'Esc', label: 'cancel' },
       ];
     default:
