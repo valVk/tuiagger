@@ -297,6 +297,10 @@ func (m Model) renderRightPanel(height, width int) string {
 	}
 
 	var lines []string
+	// cursorLine, when set (try-it-out only), drives an auto-scroll-into-
+	// view instead of the manual m.RightScroll offset — see
+	// renderTryItLines's doc comment for why.
+	cursorLine := -1
 	item := m.selectedItem()
 	switch {
 	case m.Loading:
@@ -306,13 +310,16 @@ func (m Model) renderRightPanel(height, width int) string {
 	case item.Type == ItemTag:
 		lines = m.renderTagLines(item.TagName, width-2)
 	case item.Type == ItemEndpoint && m.Mode == ModeTryIt:
-		lines = m.renderTryItLines(item.Endpoint, width-2)
+		lines, cursorLine = m.renderTryItLines(item.Endpoint, width-2)
 	case item.Type == ItemEndpoint:
 		lines = m.renderEndpointLines(item.Endpoint, active, width-2)
 	}
 
 	visibleHeight := max(height-2, 1)
 	start := min(m.RightScroll, max(len(lines)-1, 0))
+	if cursorLine >= 0 {
+		start = scrollToShow(cursorLine, start, visibleHeight, len(lines))
+	}
 	end := min(start+visibleHeight, len(lines))
 	visible := lines[start:end]
 	for len(visible) < visibleHeight {
@@ -532,7 +539,11 @@ func (m Model) renderResponseBlock(width int) []string {
 	if m.Response == nil {
 		return nil
 	}
-	active := m.Mode == ModeBrowse && m.ActivePanel == PanelRight
+	// Matches the try-it-out response-viewer keys now being wired up in
+	// tryit.go (see its doc comment): the interactive hints (position
+	// indicator, v/y hint, \:toggle) show whenever those keys actually
+	// work, not just in browse mode.
+	active := m.Mode == ModeTryIt || (m.Mode == ModeBrowse && m.ActivePanel == PanelRight)
 	return append([]string{""}, m.Viewer.render(m.Response, m.Curl, active, width)...)
 }
 
@@ -626,6 +637,20 @@ func parseStatus(code string) (int, bool) {
 		n = n*10 + int(c-'0')
 	}
 	return n, true
+}
+
+// scrollToShow returns the minimal-motion scroll offset that brings line
+// into the visible window [start, start+visibleHeight) — matches
+// usePanelNavigation/useRightPanelKeyboard's scrollToParamRow intent
+// (keep the focused row on screen without needlessly re-centering it).
+func scrollToShow(line, start, visibleHeight, total int) int {
+	switch {
+	case line < start:
+		start = line
+	case line >= start+visibleHeight:
+		start = line - visibleHeight + 1
+	}
+	return min(max(start, 0), max(total-visibleHeight, 0))
 }
 
 func padRight(s string, width int) string {

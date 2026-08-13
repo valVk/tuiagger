@@ -482,14 +482,15 @@ func (m Model) renderManualPanel(height, width int) string {
 	if manual.Focus == manualFocusParams {
 		lines[len(lines)-1] += "  " + renderHints([]hint{{"j/k", "move"}, {"i", "edit"}, {"x", "del"}, {"c", "type"}})
 	}
+	widgets := paramEditWidgets{Field: manual.ParamField, NameInput: manual.NameInput, ValueInput: manual.ValueInput, NewParamIn: manual.NewParamIn}
 	lines = append(lines, paramTableHeader())
 	for i, p := range manual.Params {
 		selected := manual.Focus == manualFocusParams && i == manual.ParamCursor
 		editing := selected && manual.ParamEditing && !manual.ParamAddNew
-		lines = append(lines, renderCustomParamRow(p, selected, editing, manual))
+		lines = append(lines, renderCustomParamRow(p, selected, editing, widgets))
 	}
 	addSelected := manual.Focus == manualFocusParams && manual.ParamCursor == len(manual.Params)
-	lines = append(lines, renderAddParamRow(addSelected, addSelected && manual.ParamEditing && manual.ParamAddNew, manual))
+	lines = append(lines, renderAddParamRow(addSelected, addSelected && manual.ParamEditing && manual.ParamAddNew, widgets))
 
 	if isWriteMethod(method) {
 		lines = append(lines, "", boldStyle.Render("BODY")+" "+dimStyle.Render("application/json"))
@@ -508,7 +509,12 @@ func (m Model) renderManualPanel(height, width int) string {
 		default:
 			bodyContent = dimStyle.Render("i: edit")
 		}
-		lines = append(lines, bodyBoxStyle.Render(bodyContent))
+		// Same fix as renderTryItBodySection in tryit.go: bodyBoxStyle's
+		// render is a multi-line string (the bordered box), so it must be
+		// split into individual rows before joining the flat lines slice —
+		// appending it as one element under-counts its real height and
+		// overflows the panel's row budget.
+		lines = append(lines, strings.Split(bodyBoxStyle.Render(bodyContent), "\n")...)
 	}
 
 	if m.Response != nil {
@@ -532,9 +538,21 @@ func (m Model) renderManualPanel(height, width int) string {
 		Render(strings.Join(visible, "\n"))
 }
 
+// paramEditWidgets bundles the name/value text inputs shared by any
+// custom-param row editor — both the manual builder's PARAMS table
+// (manual.go) and try-it-out's PARAMETERS table (tryit.go) edit custom
+// query/path params the same way, so they share this rendering rather than
+// each keeping their own copy of renderCustomParamRow/renderAddParamRow.
+type paramEditWidgets struct {
+	Field      string // "name" | "value"
+	NameInput  textinput.Model
+	ValueInput textinput.Model
+	NewParamIn string
+}
+
 // renderCustomParamRow matches CustomParamRow.tsx: cursor, name, value,
 // type (with a '(c)' hint when selected).
-func renderCustomParamRow(p storage.CustomParameter, selected, editing bool, manual manualState) string {
+func renderCustomParamRow(p storage.CustomParameter, selected, editing bool, w paramEditWidgets) string {
 	cursor := "  "
 	if selected {
 		cursor = cyanStyle.Render("> ")
@@ -544,8 +562,8 @@ func renderCustomParamRow(p storage.CustomParameter, selected, editing bool, man
 	if nameCell == "" {
 		nameCell = "-"
 	}
-	if editing && manual.ParamField == "name" {
-		nameCell = manual.NameInput.View()
+	if editing && w.Field == "name" {
+		nameCell = w.NameInput.View()
 	}
 	nameStyle := lipgloss.NewStyle()
 	if selected {
@@ -559,8 +577,8 @@ func renderCustomParamRow(p storage.CustomParameter, selected, editing bool, man
 	if valueCell == "" {
 		valueCell = "-"
 	}
-	if editing && manual.ParamField == "value" {
-		valueCell = manual.ValueInput.View()
+	if editing && w.Field == "value" {
+		valueCell = w.ValueInput.View()
 	}
 	valueStyle := lipgloss.NewStyle().Foreground(color2xx)
 	if selected {
@@ -584,29 +602,29 @@ func renderCustomParamRow(p storage.CustomParameter, selected, editing bool, man
 
 // renderAddParamRow matches AddNewParamRow.tsx's "[ i: add parameter ]" /
 // "[ + ]" affordance.
-func renderAddParamRow(selected, editing bool, manual manualState) string {
+func renderAddParamRow(selected, editing bool, w paramEditWidgets) string {
 	cursor := "  "
 	if selected {
 		cursor = cyanStyle.Render("> ")
 	}
 	if editing {
-		name := manual.NameInput.View()
-		if manual.ParamField != "name" {
-			name = manual.NameInput.Value()
+		name := w.NameInput.View()
+		if w.Field != "name" {
+			name = w.NameInput.Value()
 			if name == "" {
 				name = "-"
 			}
 			name = cyanStyle.Render(name)
 		}
-		value := manual.ValueInput.View()
-		if manual.ParamField != "value" {
-			value = manual.ValueInput.Value()
+		value := w.ValueInput.View()
+		if w.Field != "value" {
+			value = w.ValueInput.Value()
 			if value == "" {
 				value = "-"
 			}
 			value = dimStyle.Render(value)
 		}
-		return cursor + padRight(name, paramNameWidth) + padRight(value, paramValueWidth) + yellowStyle.Render(manual.NewParamIn)
+		return cursor + padRight(name, paramNameWidth) + padRight(value, paramValueWidth) + yellowStyle.Render(w.NewParamIn)
 	}
 	label := dimStyle.Render("[ + ]")
 	if selected {

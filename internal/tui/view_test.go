@@ -76,7 +76,8 @@ func TestStatusBarHintsColorKeysDistinctFromLabels(t *testing.T) {
 func TestTryItActionButtonsAreColored(t *testing.T) {
 	m := firstEndpointModel(t)
 	m = step(m, "t")
-	out := strings.Join(m.renderTryItLines(m.selectedItem().Endpoint, 80), "\n")
+	lines, _ := m.renderTryItLines(m.selectedItem().Endpoint, 80)
+	out := strings.Join(lines, "\n")
 	if !strings.Contains(out, "Execute (e)") {
 		t.Errorf("expected Execute button, got:\n%s", out)
 	}

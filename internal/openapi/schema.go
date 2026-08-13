@@ -114,12 +114,27 @@ func ScaffoldPlaceholder(s *Schema) any {
 
 var multiNewline = regexp.MustCompile(`\n\s*\n`)
 
-// HTMLToPlainText strips HTML tags from a description field, matching
-// parser.ts's htmlToPlainText: text nodes are concatenated, each closing tag
-// adds a newline, and runs of blank lines collapse to one.
+// nonVisibleTags are elements whose text content is never part of a
+// rendered page — <style>/<script> bodies are raw CSS/JS, <title> only
+// shows in a browser tab/window chrome, never the page body. parser.ts's
+// htmlToPlainText concatenates every text node with no such filtering, so
+// hitting an HTML error page (a very real response body — proxies, load
+// balancers, and misconfigured backends return HTML far more often than a
+// clean JSON API does) leaks raw CSS into the "plain text" and duplicates
+// the page's heading (once from <title>, once from <h1>). Filtering these
+// out is a deliberate improvement over the TS source, not a port of it —
+// flagged here per this rewrite's own convention for that.
+var nonVisibleTags = map[string]bool{"style": true, "script": true, "title": true}
+
+// HTMLToPlainText strips HTML tags from a description field or response
+// body, matching parser.ts's htmlToPlainText's overall shape (text nodes
+// concatenated, each closing tag adds a newline, runs of blank lines
+// collapse to one) but skipping text inside nonVisibleTags — see that var's
+// doc comment for why this isn't a strict line-for-line port.
 func HTMLToPlainText(input string) string {
 	var b strings.Builder
 	tokenizer := html.NewTokenizer(strings.NewReader(input))
+	skipDepth := 0
 
 	for {
 		tt := tokenizer.Next()
@@ -127,9 +142,20 @@ func HTMLToPlainText(input string) string {
 		case html.ErrorToken:
 			text := multiNewline.ReplaceAllString(b.String(), "\n")
 			return strings.TrimSpace(text)
+		case html.StartTagToken:
+			name, _ := tokenizer.TagName()
+			if nonVisibleTags[string(name)] {
+				skipDepth++
+			}
 		case html.TextToken:
-			b.WriteString(string(tokenizer.Text()))
+			if skipDepth == 0 {
+				b.WriteString(string(tokenizer.Text()))
+			}
 		case html.EndTagToken:
+			name, _ := tokenizer.TagName()
+			if nonVisibleTags[string(name)] && skipDepth > 0 {
+				skipDepth--
+			}
 			b.WriteByte('\n')
 		}
 	}

@@ -236,7 +236,21 @@ func (v responseViewer) render(resp *request.Response, curl string, active bool,
 	}
 
 	if curl != "" {
-		lines = append(lines, dimStyle.Render("curl: "+curl))
+		// GenerateCurl (curl.go) joins its parts with " \\\n" — a real
+		// multi-line shell command, always at least 2 lines (method+URL
+		// plus the Accept header), often many more once request headers or
+		// a scaffolded JSON body (curl.go's `-d '<body>'`, itself
+		// multi-line) are included. TS renders this as a single Ink <Text>
+		// whose embedded newlines Ink's own layout engine expands into
+		// multiple visual lines for free; this flat []string model has no
+		// such magic; a single element with embedded newlines silently
+		// under-counts its real height. Same class of bug as
+		// renderTryItBodySection's box and the manual builder's BODY box —
+		// found by specifically re-checking every remaining
+		// dimStyle.Render/append call for this pattern after those two.
+		for l := range strings.SplitSeq("curl: "+curl, "\n") {
+			lines = append(lines, dimStyle.Render(l))
+		}
 	}
 
 	return lines

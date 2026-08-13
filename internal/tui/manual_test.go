@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -275,6 +276,30 @@ func TestManualDeleteEditingRequestWithDKey(t *testing.T) {
 	}
 	if len(m.Store.LoadSavedRequests().Requests) != 0 {
 		t.Errorf("expected saved request deleted via manual-mode 'd'")
+	}
+}
+
+// TestManualViewDoesNotOverflowTerminalHeight is the manual-builder half of
+// the regression covered by
+// TestRenderTryItLinesEveryElementIsOneTerminalRow in tryit_body_test.go:
+// renderManualPanel's BODY box had the same bug (a multi-line bordered
+// render appended as one flat-lines element, under-counting its real
+// height and overflowing the terminal). Assert the whole rendered frame
+// never exceeds the window height it was given.
+func TestManualViewDoesNotOverflowTerminalHeight(t *testing.T) {
+	m := modelWithStore(t)
+	m = step(m, "m", "m") // cycle to POST, which has a BODY box
+	if m.Manual.Method != "POST" {
+		t.Fatalf("setup: expected method POST, got %q", m.Manual.Method)
+	}
+	m = step(m, "tab", "tab", "i") // focus params -> body -> start editing
+	m = typeText(m, `{"a":1}`)
+	m = step(m, "esc")
+
+	out := m.View()
+	rows := strings.Count(out, "\n") + 1
+	if rows > m.Height {
+		t.Errorf("expected rendered view to fit within %d rows, got %d", m.Height, rows)
 	}
 }
 

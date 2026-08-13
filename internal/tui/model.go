@@ -9,6 +9,7 @@ import (
 	"maps"
 	"sort"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valVK/tuiagger/internal/openapi"
@@ -45,8 +46,32 @@ type tryItState struct {
 	ParamEditing bool
 	ValueInput   textinput.Model
 
+	// CustomParams backs the PARAMETERS table's always-present "[ + ]" row
+	// — matching ParametersSection.tsx, which appends an `addNew` row
+	// unconditionally in try-it-out mode regardless of whether the
+	// endpoint declares any spec parameters, so the section (and its
+	// hints) never disappears and custom query/path params can always be
+	// added. NameInput/ParamField back the name half of custom/add-new row
+	// editing (ValueInput above is shared with spec-param editing, one at
+	// a time since only one row can be selected).
+	CustomParams []storage.CustomParameter
+	ParamField   string // "name" | "value", used while editing a custom/add-new row
+	NameInput    textinput.Model
+	NewParamIn   string // in-progress type ("query"/"path") for the add-new row
+
 	EditingPath bool
 	PathInput   textinput.Model
+
+	// Body mirrors useRightPanelKeyboard.ts's bodyTabFocused/editingBody:
+	// 'j' off the last parameter row (or 'k' back) moves focus onto the
+	// BODY section; 'i' there edits it (auto-scaffolding a placeholder if
+	// still empty, matching the TS quirk where that path uses
+	// scaffoldPlaceholder rather than the faker-driven scaffoldBody
+	// enterTryIt already ran once on entry).
+	Body        string
+	BodyFocused bool
+	EditingBody bool
+	BodyInput   textarea.Model
 
 	ShowResetConfirm bool
 }
@@ -187,7 +212,7 @@ func computeAllTags(specTags []string, customTags []storage.CustomTag, reqs []st
 // in the app — used to keep single-character bindings like 'q' from being
 // swallowed as a global shortcut while the user is typing.
 func (m Model) isEditingText() bool {
-	return m.TryIt.EditingPath || m.TryIt.ParamEditing ||
+	return m.TryIt.EditingPath || m.TryIt.ParamEditing || m.TryIt.EditingBody ||
 		m.Manual.EditingPath || m.Manual.ParamEditing || m.Manual.EditingBody ||
 		m.Manual.ShowSaveDialog || m.Mode == ModeRenameTag ||
 		m.Auth.Editing || m.Env.InsertingVar || m.Env.AddingEnv
@@ -412,6 +437,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.Viewer, cmd = m.Viewer.handleKey(key)
 			return m, cmd
+		case "j", "k":
+			// While actively visual-selecting, lowercase j/k also drive the
+			// response cursor instead of the outer panel scroll — found via
+			// a user report: without this, pressing 'v' then reaching for
+			// the muscle-memory 'j'/'k' (rather than the shifted 'J'/'K'
+			// the hint text actually asks for) just scrolls the panel out
+			// from under the selection, which looks exactly like "can't
+			// expand the selection, it just moves the viewport." Only
+			// active during a selection — outside of one, lowercase j/k
+			// keeps its normal job of reaching content that might be
+			// scrolled out of view above the response section.
+			if m.Viewer.Selecting {
+				viewerKey := "J"
+				if key == "k" {
+					viewerKey = "K"
+				}
+				var cmd tea.Cmd
+				m.Viewer, cmd = m.Viewer.handleKey(viewerKey)
+				return m, cmd
+			}
 		case "g":
 			m.Viewer, _ = m.Viewer.handleKey(key)
 		}

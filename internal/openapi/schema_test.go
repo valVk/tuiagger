@@ -67,3 +67,49 @@ func TestHTMLToPlainTextStripsTagsAndCollapsesBlankLines(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+// TestHTMLToPlainTextSkipsStyleScriptAndTitle is a regression test for a
+// real HTML error page (Python's http.server 501 response — reported by a
+// user seeing a raw ":root { color-scheme: ... }" block and a duplicated
+// "Error response" heading in the response viewer). <style>/<script>
+// content and <title> text are never part of a rendered page and must not
+// leak into the plain-text output.
+func TestHTMLToPlainTextSkipsStyleScriptAndTitle(t *testing.T) {
+	html := `<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Error response</title>
+<style type="text/css">
+    :root { color-scheme: light dark; }
+</style>
+</head>
+<body>
+<h1>Error response</h1>
+<p>Error code: 501</p>
+<p>Message: Unsupported method ('POST').</p>
+</body>
+</html>`
+
+	got := HTMLToPlainText(html)
+	if strings.Contains(got, "color-scheme") {
+		t.Errorf("expected CSS content stripped, got:\n%s", got)
+	}
+	if strings.Count(got, "Error response") != 1 {
+		t.Errorf("expected the <title>-duplicated heading removed (exactly one 'Error response'), got:\n%s", got)
+	}
+	if !strings.Contains(got, "Error code: 501") {
+		t.Errorf("expected real body text preserved, got:\n%s", got)
+	}
+}
+
+func TestHTMLToPlainTextSkipsScriptContent(t *testing.T) {
+	got := HTMLToPlainText(`<p>before</p><script>if (1 < 2) { alert('x'); }</script><p>after</p>`)
+	if strings.Contains(got, "alert") {
+		t.Errorf("expected script content stripped, got %q", got)
+	}
+	want := "before\nafter"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

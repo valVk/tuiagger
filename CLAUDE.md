@@ -172,6 +172,9 @@ Try It Out:
   m             - Cycle HTTP method
   r             - Reset overrides
   Esc           - Exit try-it-out
+  j (past last param) - Focus the BODY section
+  i (body focused)     - Edit body (scaffolds realistic data if empty)
+  k / Esc (body focused) - Back to parameters / exit try-it-out
 
 Parameters / Headers:
   j / k         - Navigate rows
@@ -184,6 +187,7 @@ Parameters / Headers:
 
 Response Body:
   J / K         - Scroll down / up
+  j / k         - Also work as J/K while a visual selection is active
   g / G         - Jump to top / bottom
   v             - Toggle visual selection mode
   y             - Yank selection (or full body) to clipboard
@@ -224,7 +228,7 @@ Save Dialog (s):
 
 ### Try It Out
 - Press `t` on any endpoint to enter edit mode
-- Fill in path, query, header parameters; edit request body
+- Fill in path, query, header parameters; the request body auto-fills with realistic generated data and is fully editable (`j` past the last parameter row to focus it, `i` to edit)
 - Press `e` to execute; view response with status, headers, body, and curl command
 - Parameter values and body persist per-endpoint as overrides in `.tuiagger/overrides.json`
 
@@ -250,13 +254,13 @@ Save Dialog (s):
 - Use `{{faker.internet.email()}}`, `{{faker.person.fullName()}}`, etc. in any field
 - Body scaffolding auto-generates realistic values from the response schema
 
-### Response Viewer
-- Visual selection mode (`v`) to select lines, `y` to yank to clipboard
-- Scroll large bodies with `J`/`K`
-
 ### External Editor
 - Edit request body in `$EDITOR` (falls back to `vi`)
 - Temp file named `tuiagger-body-<timestamp>.json`
+
+### Response Viewer
+- Visual selection mode (`v`) to select lines, `y` to yank to clipboard
+- Scroll large bodies with `J`/`K`
 
 ### Method Badge Colors
 
