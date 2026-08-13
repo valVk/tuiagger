@@ -292,6 +292,42 @@ func TestQuickExecuteFromBrowseUsesStubClient(t *testing.T) {
 	}
 }
 
+// TestExecuteWithoutChangesDoesNotMarkOverridden is a regression test: every
+// execute (browse quick-execute or try-it-out's 'e') used to unconditionally
+// persist an EndpointOverride, matching App.tsx's own unconditional
+// saveOverride() call before executing — so pressing 'e' straight from
+// browse mode on an endpoint that was never entered via try-it-out, never
+// customized in any way, still left it marked "~"/"*saved params" from the
+// request alone. Found via a user report ("if I execute request even if I
+// did not change anything... it marked as overrided").
+func TestExecuteWithoutChangesDoesNotMarkOverridden(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := firstEndpointModel(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), newTestStore(t))
+	ep := m.selectedItem().Endpoint
+
+	next, cmd := m.Update(key("e"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatalf("expected a non-nil execute command")
+	}
+	msg := cmd()
+	next2, _ := m.Update(msg)
+	m = next2.(Model)
+
+	if m.Response == nil {
+		t.Fatalf("expected a response")
+	}
+	if got := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); got != nil {
+		t.Errorf("expected no override persisted after executing with nothing changed, got %+v", got)
+	}
+}
+
 // TestQuickExecuteWorksFromLeftPanel is a regression test: 'e' quick-execute
 // used to only work after pressing 'l' to focus the right panel, since it
 // was handled in handleRightPanelKey — but useAppKeyboard.ts's real 'e'
@@ -574,6 +610,37 @@ func TestHeaderParamsExcludedFromParametersSection(t *testing.T) {
 	_, nonHeader := splitCustomParams(m.TryIt.CustomParams)
 	if len(nonHeader) != 0 {
 		t.Errorf("expected the header param to be excluded from PARAMETERS' custom list, got %+v", nonHeader)
+	}
+}
+
+// TestYankCurlKeyDoesNotCollideWithCycleParamType is a regression test for
+// the try-it-out response-viewer key routing: 'C' (uppercase, yank curl) is
+// intercepted before the main key switch, but lowercase 'c' (cycle param
+// type) must still reach it — Go's 'C'/'c' case-sensitivity means the two
+// don't actually collide, but this locks that in rather than trusting it by
+// inspection.
+func TestYankCurlKeyDoesNotCollideWithCycleParamType(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = step(m, "t")
+	next, _ := m.Update(responseMsg{response: &request.Response{Status: 200}, curl: "curl -X GET https://example.com"})
+	m = next.(Model)
+
+	m = step(m, "C")
+	if !m.Viewer.YankedCurl {
+		t.Errorf("expected 'C' to yank the curl command")
+	}
+
+	// Move the cursor onto the always-present add-new row (last row) so
+	// lowercase 'c' has something to cycle, regardless of how many spec
+	// parameters this fixture's endpoint happens to declare.
+	item := m.selectedItem()
+	params := sortedParameters(item.Endpoint.Operation.Parameters)
+	_, custom := splitCustomParams(m.TryIt.CustomParams)
+	m.TryIt.ParamCursor = len(params) + len(custom)
+
+	m = step(m, "c")
+	if m.TryIt.NewParamIn != "path" {
+		t.Errorf("expected lowercase 'c' to still cycle the add-new row's type, got %q", m.TryIt.NewParamIn)
 	}
 }
 

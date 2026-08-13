@@ -56,6 +56,28 @@ func TestResponseViewerVisualSelectAndYankClearsSelection(t *testing.T) {
 	}
 }
 
+// TestYankCurlSetsDistinctFlagFromBodyYank is a Go-only addition (not a TS
+// port): 'C' copies the generated curl command independent of whatever
+// selection/tab state the body viewer is in — YankedCurl is a separate flag
+// from Yanked so the two "[...]" indicators never fight over one timer.
+func TestYankCurlSetsDistinctFlagFromBodyYank(t *testing.T) {
+	v := newResponseViewer("a\nb\nc")
+	v = stepViewer(v, "v", "J") // start a body selection first
+	next, cmd := v.yankCurl("curl -X GET https://example.com")
+	if !next.YankedCurl {
+		t.Errorf("expected YankedCurl set")
+	}
+	if next.Yanked {
+		t.Errorf("expected the unrelated body-yank flag to stay false")
+	}
+	if !next.Selecting {
+		t.Errorf("expected yanking curl to leave an in-progress body selection untouched")
+	}
+	if cmd == nil {
+		t.Errorf("expected yankCurl to return a batched clipboard+timer command")
+	}
+}
+
 func TestResponseViewerEscCancelsSelection(t *testing.T) {
 	v := newResponseViewer("a\nb\nc")
 	v = stepViewer(v, "v", "J", "esc")
@@ -151,13 +173,13 @@ func TestResponseViewerRenderRequestTabShowsMethodURLHeadersBody(t *testing.T) {
 func TestResponseViewerRenderCurlOnlyOnResponseTab(t *testing.T) {
 	v := newResponseViewer("hello")
 	resp := &request.Response{Status: 200}
-	respOut := strings.Join(v.render(resp, "curl -X GET x", true, 80), "\n")
+	respOut := stripANSI(strings.Join(v.render(resp, "curl -X GET x", true, 80), "\n"))
 	if !strings.Contains(respOut, "curl -X GET x") {
 		t.Errorf("expected curl on response tab, got:\n%s", respOut)
 	}
 
 	v = stepViewer(v, `\`)
-	reqOut := strings.Join(v.render(resp, "curl -X GET x", true, 80), "\n")
+	reqOut := stripANSI(strings.Join(v.render(resp, "curl -X GET x", true, 80), "\n"))
 	if strings.Contains(reqOut, "curl -X GET x") {
 		t.Errorf("expected no curl on request tab, got:\n%s", reqOut)
 	}
@@ -192,8 +214,11 @@ func TestResponseViewerRenderCurlContentPreservedInOrder(t *testing.T) {
 	resp := &request.Response{Status: 200}
 	curl := "curl -X 'POST' \\\n  'http://example.com' \\\n  -H 'Accept: application/json' \\\n  -d '{\n  \"a\": 1\n}'"
 	lines := v.render(resp, curl, true, 80)
+	for i, l := range lines {
+		lines[i] = stripANSI(l)
+	}
 
-	want := strings.Split("curl: "+curl, "\n")
+	want := strings.Split(curl, "\n")
 	var got []string
 	for _, l := range lines {
 		for _, w := range want {
@@ -210,6 +235,56 @@ func TestResponseViewerRenderCurlContentPreservedInOrder(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("fragment %d out of order: got %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// TestResponseViewerRenderCurlSectionLayout matches a user request: curl
+// gets its own section — a blank separator, a "CURL" heading (with a
+// "C: yank curl" hint, matching the RESPONSE/REQUEST status line's own
+// pattern), a rule, then the syntax-colored command — instead of a single
+// dim "curl: ..." line glued directly to whatever precedes it.
+func TestResponseViewerRenderCurlSectionLayout(t *testing.T) {
+	v := newResponseViewer("hello")
+	resp := &request.Response{Status: 200}
+	lines := v.render(resp, "curl -X GET https://example.com", true, 80)
+	for i, l := range lines {
+		lines[i] = stripANSI(l)
+	}
+
+	headingIdx := -1
+	for i, l := range lines {
+		if strings.HasPrefix(l, "CURL") {
+			headingIdx = i
+			break
+		}
+	}
+	if headingIdx <= 0 {
+		t.Fatalf("expected a CURL heading after at least one preceding line, got index %d in:\n%s", headingIdx, strings.Join(lines, "\n"))
+	}
+	if lines[headingIdx-1] != "" {
+		t.Errorf("expected a blank line directly before the CURL heading, got %q", lines[headingIdx-1])
+	}
+	if !strings.Contains(lines[headingIdx], "C: yank curl") {
+		t.Errorf("expected the CURL heading to show the yank-curl hint, got %q", lines[headingIdx])
+	}
+	if !strings.Contains(lines[headingIdx+1], "───") {
+		t.Errorf("expected a rule directly under the CURL heading, got %q", lines[headingIdx+1])
+	}
+	if !strings.Contains(lines[headingIdx+2], "curl -X GET https://example.com") {
+		t.Errorf("expected the curl command directly under the rule, got %q", lines[headingIdx+2])
+	}
+}
+
+// TestResponseViewerRenderCurlHeadingShowsYankedIndicator matches the same
+// "[curl yanked]" pattern the main RESPONSE/REQUEST status line uses for
+// body yanks.
+func TestResponseViewerRenderCurlHeadingShowsYankedIndicator(t *testing.T) {
+	v := newResponseViewer("hello")
+	v.YankedCurl = true
+	resp := &request.Response{Status: 200}
+	out := stripANSI(strings.Join(v.render(resp, "curl -X GET x", true, 80), "\n"))
+	if !strings.Contains(out, "CURL") || !strings.Contains(out, "[curl yanked]") {
+		t.Errorf("expected the CURL heading to show [curl yanked], got:\n%s", out)
 	}
 }
 

@@ -191,6 +191,7 @@ Response Body:
   g / G         - Jump to top / bottom
   v             - Toggle visual selection mode
   y             - Yank selection (or full body) to clipboard
+  C             - Yank the generated curl command to clipboard
   Esc           - Cancel visual mode
 
 Info Panel (i):
@@ -260,6 +261,7 @@ Save Dialog (s):
 
 ### Response Viewer
 - Visual selection mode (`v`) to select lines, `y` to yank to clipboard
+- `C` yanks the generated curl command to clipboard, independent of the current tab/selection
 - Scroll large bodies with `J`/`K`
 
 ### Method Badge Colors

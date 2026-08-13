@@ -284,7 +284,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.RightScroll = m.scrollToResponse()
 		return m, nil
 	case yankExpiredMsg:
-		m.Viewer.Yanked = false
+		if msg.curl {
+			m.Viewer.YankedCurl = false
+		} else {
+			m.Viewer.Yanked = false
+		}
 		return m, nil
 	case reloadMsg:
 		return m.applyReload(msg), nil
@@ -456,6 +460,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.Viewer, cmd = m.Viewer.handleKey(key)
 			return m, cmd
+		case "C":
+			// Go-only addition, not a TS port — yanks the generated curl
+			// command to the clipboard, independent of tab/selection state.
+			if m.Curl != "" {
+				var cmd tea.Cmd
+				m.Viewer, cmd = m.Viewer.yankCurl(m.Curl)
+				return m, cmd
+			}
 		case "j", "k":
 			// While actively visual-selecting, lowercase j/k also drive the
 			// response cursor instead of the outer panel scroll — found via

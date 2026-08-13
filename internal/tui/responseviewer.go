@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,28 +30,40 @@ const (
 // promoted from the Phase 0 spike (internal/spike/viewer) and rebuilt in
 // Phase 3's UX-parity pass to match ResponseViewer.tsx: a request/response
 // tab toggle, its own scroll-follow viewport, and a transient yank message.
+// Curl is rendered as its own separate section below the body (see render)
+// — not part of Lines/Cursor/the visual-selection scroll, since it's a
+// fixed, always-fully-shown block, not something to navigate line by line.
 type responseViewer struct {
-	Lines     []string
-	Cursor    int
-	Selecting bool
-	SelStart  int
-	Offset    int
-	Tab       respTab
-	Yanked    bool
+	Lines      []string
+	Cursor     int
+	Selecting  bool
+	SelStart   int
+	Offset     int
+	Tab        respTab
+	Yanked     bool
+	YankedCurl bool // distinct from Yanked so the "[...]" feedback names what was actually copied
 }
 
 func newResponseViewer(body string) responseViewer {
 	return responseViewer{Lines: strings.Split(body, "\n")}
 }
 
-// yankExpiredMsg clears the transient "[yanked]" indicator, matching TS's
-// setTimeout(..., 1500). Like the TS version, a second yank within the
-// window doesn't reset the timer — the first timer to fire always clears
-// it, even if a newer yank message should still be showing.
-type yankExpiredMsg struct{}
+// yankExpiredMsg clears the transient "[yanked]"/"[curl yanked]" indicator,
+// matching TS's setTimeout(..., 1500). Like the TS version, a second yank of
+// the *same kind* within the window doesn't reset the timer — the first
+// timer to fire always clears it, even if a newer yank message should still
+// be showing. Curl (a Go-only addition) is deliberately kept a fully
+// separate indicator/timer from the response-body yank rather than sharing
+// one flag, since yanking the curl command has nothing to do with whatever
+// visual selection or body content is currently showing.
+type yankExpiredMsg struct{ curl bool }
 
 func clearYankAfter() tea.Cmd {
 	return tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg { return yankExpiredMsg{} })
+}
+
+func clearCurlYankAfter() tea.Cmd {
+	return tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg { return yankExpiredMsg{curl: true} })
 }
 
 // handleKey processes '\' (tab toggle, always active) plus J/K/g/G/v/y/Esc
@@ -116,11 +129,72 @@ func (v responseViewer) selectedText() string {
 	return strings.Join(v.Lines[lo:hi+1], "\n")
 }
 
+// yankCurl copies the generated curl command to the clipboard — a Go-only
+// addition, not a TS port: ResponseViewer.tsx renders the curl command as
+// plain read-only text with no way to copy it except manual terminal
+// selection. Works regardless of which tab (request/response) is active or
+// whether a visual selection is in progress, since the curl command
+// represents the whole request, not the body being viewed.
+func (v responseViewer) yankCurl(curl string) (responseViewer, tea.Cmd) {
+	v.YankedCurl = true
+	return v, tea.Batch(yankCmd(curl), clearCurlYankAfter())
+}
+
 func yankCmd(text string) tea.Cmd {
 	return func() tea.Msg {
 		_ = clipboard.WriteAll(text)
 		return nil
 	}
+}
+
+// curlHeadingLine matches the RESPONSE/REQUEST status line's own pattern —
+// a bold section label plus a right-side hint that becomes "[curl yanked]"
+// right after 'C' is pressed, same as the main status line's "[yanked]".
+func curlHeadingLine(active, yankedCurl bool) string {
+	left := boldStyle.Render("CURL")
+	switch {
+	case yankedCurl:
+		left += lipgloss.NewStyle().Foreground(color2xx).Bold(true).Render("  [curl yanked]")
+	case active:
+		left += dimStyle.Render("  C: yank curl")
+	}
+	return left
+}
+
+var (
+	curlFlagRe    = regexp.MustCompile(`^(\s*)(curl|--?[A-Za-z][A-Za-z-]*)`)
+	curlStringRe  = regexp.MustCompile(`'[^']*'|"[^"]*"`)
+	curlFlagStyle = cyanStyle
+	// yellowStyle reused for quoted strings — the app's existing ANSI-16
+	// palette (see colors.go) doesn't have a dedicated "string" color, and
+	// yellow renders close enough to the amber/orange typical editor
+	// syntax themes use for strings.
+	curlStringStyle = yellowStyle
+)
+
+// colorizeCurlLine gives the generated curl command basic syntax
+// highlighting instead of rendering it all dim/gray: quoted string
+// arguments (URLs, header values, JSON bodies) in one color, the leading
+// "curl"/flag token (curl, -X, -H, -d, --data, ...) in another. A Go-only
+// addition, not a TS port — TS renders curl as a single plain dim line.
+func colorizeCurlLine(line string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range curlStringRe.FindAllStringIndex(line, -1) {
+		b.WriteString(colorizeCurlFlag(line[last:m[0]]))
+		b.WriteString(curlStringStyle.Render(line[m[0]:m[1]]))
+		last = m[1]
+	}
+	b.WriteString(colorizeCurlFlag(line[last:]))
+	return b.String()
+}
+
+func colorizeCurlFlag(s string) string {
+	loc := curlFlagRe.FindStringSubmatchIndex(s)
+	if loc == nil {
+		return s
+	}
+	return s[:loc[4]] + curlFlagStyle.Render(s[loc[4]:loc[5]]) + s[loc[5]:]
 }
 
 // statusColor matches ResponseViewer.tsx's own inline 3-way color — a
@@ -142,7 +216,8 @@ func responseStatusColor(status int) lipgloss.Color {
 // render matches ResponseViewer.tsx line-for-line: a status/tab header row,
 // then either the REQUEST tab (method+url, headers, body) or the RESPONSE
 // tab (headers, body with cursor/selection highlighting, contextual hint
-// text, curl). active gates the interactive hints (position indicator,
+// text, then a separate CURL section with its own heading/rule, syntax-
+// colored). active gates the interactive hints (position indicator,
 // tab-toggle hint, selection hint) exactly like the TS `isActive` prop.
 func (v responseViewer) render(resp *request.Response, curl string, active bool, width int) []string {
 	var lines []string
@@ -156,6 +231,9 @@ func (v responseViewer) render(resp *request.Response, curl string, active bool,
 		dimStyle.Render(" "+strconv.FormatInt(resp.TimeMs, 10)+"ms")
 	if v.Yanked {
 		statusText += lipgloss.NewStyle().Foreground(color2xx).Bold(true).Render("  [yanked]")
+	}
+	if v.YankedCurl {
+		statusText += lipgloss.NewStyle().Foreground(color2xx).Bold(true).Render("  [curl yanked]")
 	}
 
 	right := ""
@@ -228,28 +306,19 @@ func (v responseViewer) render(resp *request.Response, curl string, active bool,
 		switch {
 		case v.Selecting:
 			lines = append(lines, cyanStyle.Render("-- VISUAL --  y: yank selection  Esc: cancel"))
-		case len(v.Lines) > responseViewport:
-			lines = append(lines, dimStyle.Render("J/K: move  g/G: top/bottom  v: visual  y: yank all"))
 		default:
-			lines = append(lines, dimStyle.Render("v: visual  y: yank"))
+			// Always documents J/K/g/G here, not just when the body is
+			// longer than one viewport — found via a user report that they
+			// "lost" the J/K hint (it used to only show once content
+			// overflowed, easy to miss that it's there at all otherwise).
+			lines = append(lines, dimStyle.Render("J/K: move  g/G: top/bottom  v: visual  y: yank"))
 		}
 	}
 
 	if curl != "" {
-		// GenerateCurl (curl.go) joins its parts with " \\\n" — a real
-		// multi-line shell command, always at least 2 lines (method+URL
-		// plus the Accept header), often many more once request headers or
-		// a scaffolded JSON body (curl.go's `-d '<body>'`, itself
-		// multi-line) are included. TS renders this as a single Ink <Text>
-		// whose embedded newlines Ink's own layout engine expands into
-		// multiple visual lines for free; this flat []string model has no
-		// such magic; a single element with embedded newlines silently
-		// under-counts its real height. Same class of bug as
-		// renderTryItBodySection's box and the manual builder's BODY box —
-		// found by specifically re-checking every remaining
-		// dimStyle.Render/append call for this pattern after those two.
-		for l := range strings.SplitSeq("curl: "+curl, "\n") {
-			lines = append(lines, dimStyle.Render(l))
+		lines = append(lines, "", curlHeadingLine(active, v.YankedCurl), strings.Repeat("─", max(width, 0)))
+		for l := range strings.SplitSeq(curl, "\n") {
+			lines = append(lines, colorizeCurlLine(truncate(l, width)))
 		}
 	}
 

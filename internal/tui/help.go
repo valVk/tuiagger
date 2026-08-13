@@ -79,6 +79,7 @@ var helpSections = []helpSection{
 		{"g / G", "Jump to top / bottom"},
 		{"v", "Toggle visual selection"},
 		{"y", "Yank selection (or full body)"},
+		{"C", "Yank the curl command"},
 		{"Esc", "Cancel visual mode"},
 	}},
 	{"INFO PANEL  (i)", []helpEntry{

@@ -241,6 +241,16 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.Viewer, cmd = m.Viewer.handleKey(key)
 			return m, cmd
+		case "C":
+			// Go-only addition, not a TS port — yanks the generated curl
+			// command to the clipboard, independent of tab/selection state.
+			// Doesn't collide with try-it-out's own 'c' (cycle param type,
+			// lowercase, further down this switch).
+			if m.Curl != "" {
+				var cmd tea.Cmd
+				m.Viewer, cmd = m.Viewer.yankCurl(m.Curl)
+				return m, cmd
+			}
 		case "j", "k":
 			// While actively visual-selecting, lowercase j/k also drive the
 			// response cursor — see the matching case in model.go's browse-
@@ -999,7 +1009,21 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 				OverridePath:   overridePath,
 				OverrideMethod: overrideMethod,
 			}
-			store.SaveEndpointOverride(string(method), ep.Path, override)
+			// Matches exitTryIt's isEmptyOverride check — without it, every
+			// execute unconditionally persisted an override (matching
+			// App.tsx's own unconditional saveOverride() call before
+			// executing), so even a browse-mode quick-execute with nothing
+			// ever touched (no try-it-out session, no saved override to
+			// begin with) would mark the endpoint "~"/"*saved params" from
+			// the request alone. Found via a user report ("if I execute
+			// request even if I did not change anything... it marked as
+			// overridden"). Deliberate divergence from TS, not a port of
+			// it, same reasoning as exitTryIt's fix.
+			if isEmptyOverride(override) {
+				store.DeleteEndpointOverride(string(method), ep.Path)
+			} else {
+				store.SaveEndpointOverride(string(method), ep.Path, override)
+			}
 		}
 
 		envVars, authCreds := loadEnvAndAuth(store)
