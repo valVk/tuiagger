@@ -24,6 +24,13 @@ tasks:
     cmds:
       - go test ./...
 
+  smoke:
+    desc: "Launch the real TUI via a named collection (like `tuiagger PetStore`) for manual verification (needs a real terminal)"
+    cmds:
+      - mkdir -p ~/.tuiagger/PetStore
+      - cp internal/openapi/testdata/petstore.json ~/.tuiagger/PetStore/
+      - go run ./cmd/tuiagger PetStore
+
   test-verbose:
     desc: Run all tests with verbose output
     cmds:

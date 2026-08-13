@@ -7,8 +7,10 @@ import (
 	"os"
 	"slices"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/storage"
+	"github.com/valVK/tuiagger/internal/tui"
 )
 
 const version = "v0.1.0-go"
@@ -76,12 +78,26 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Phase 2 replaces this with the Bubbletea program launch; Phase 1 only
-	// proves the foundation (resolve -> parse -> persistence wiring) works
-	// end to end.
-	fmt.Fprintf(stdout, "%s v%s — %d endpoint(s) across %d tag(s)\n",
-		parsed.Spec.Info.Title, parsed.Spec.Info.Version, len(parsed.Endpoints), len(parsed.Tags))
+	// "Remote"/"Local" are ResolveCollection's placeholder names for a bare
+	// URL or file path — not a real collection name worth showing in the UI.
+	displayName := collection.Name
+	if displayName == "Remote" || displayName == "Local" {
+		displayName = ""
+	}
+
+	if err := launchTUI(parsed, displayName); err != nil {
+		fmt.Fprintf(stderr, "Error: %v\n", err)
+		return 1
+	}
 	return 0
+}
+
+// launchTUI runs the real Bubbletea program. It's a package-level var so
+// tests can swap in a stub instead of taking over the terminal.
+var launchTUI = func(parsed *openapi.ParsedSpec, collectionName string) error {
+	p := tea.NewProgram(tui.New(parsed, collectionName), tea.WithAltScreen())
+	_, err := p.Run()
+	return err
 }
 
 func hasFlag(args []string, names ...string) bool {

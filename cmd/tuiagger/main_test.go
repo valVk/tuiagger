@@ -2,9 +2,38 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/valVK/tuiagger/internal/openapi"
 )
+
+// stubTUI replaces launchTUI for the duration of a test so tests never take
+// over the real terminal; it restores the real implementation on cleanup and
+// returns a pointer to the ParsedSpec/collectionName it was called with (nil
+// until launchTUI runs).
+func stubTUI(t *testing.T) *struct {
+	parsed *openapi.ParsedSpec
+	name   string
+	called bool
+} {
+	t.Helper()
+	got := &struct {
+		parsed *openapi.ParsedSpec
+		name   string
+		called bool
+	}{}
+	original := launchTUI
+	launchTUI = func(parsed *openapi.ParsedSpec, collectionName string) error {
+		got.parsed = parsed
+		got.name = collectionName
+		got.called = true
+		return nil
+	}
+	t.Cleanup(func() { launchTUI = original })
+	return got
+}
 
 func TestHelpFlag(t *testing.T) {
 	var out, errOut bytes.Buffer
@@ -63,14 +92,52 @@ func TestUnknownNamedCollectionErrors(t *testing.T) {
 	}
 }
 
-func TestLocalSpecPathLoadsAndSummarizes(t *testing.T) {
+func TestLocalSpecPathLaunchesTUI(t *testing.T) {
+	got := stubTUI(t)
 	var out, errOut bytes.Buffer
 	code := run([]string{"../../internal/openapi/testdata/petstore.json"}, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d, stderr=%q", code, errOut.String())
 	}
-	if !strings.Contains(out.String(), "endpoint(s)") {
-		t.Errorf("expected summary output, got %q", out.String())
+	if !got.called {
+		t.Fatalf("expected launchTUI to be called")
+	}
+	if got.parsed == nil || got.parsed.Spec.Info.Title == "" {
+		t.Errorf("expected a parsed spec to be passed through, got %+v", got.parsed)
+	}
+	// Local file paths have no meaningful collection name.
+	if got.name != "" {
+		t.Errorf("expected empty collection name for a local path, got %q", got.name)
+	}
+}
+
+func TestNamedCollectionPassesCollectionName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	collectionDir := home + "/.tuiagger/TestCol"
+	if err := os.MkdirAll(collectionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := os.ReadFile("../../internal/openapi/testdata/petstore.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(collectionDir+"/petstore.json", spec, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := stubTUI(t)
+	var out, errOut bytes.Buffer
+	code := run([]string{"TestCol"}, &out, &errOut)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d, stderr=%q", code, errOut.String())
+	}
+	if !got.called {
+		t.Fatalf("expected launchTUI to be called")
+	}
+	if got.name != "TestCol" {
+		t.Errorf("expected collection name TestCol, got %q", got.name)
 	}
 }
 
