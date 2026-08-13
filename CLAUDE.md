@@ -161,6 +161,8 @@ Right Panel (browse):
   t             - Enter try-it-out mode
   e             - Quick execute (reuses saved overrides)
   m             - Open manual request builder
+  E             - Edit selected saved request
+  D             - Delete selected saved request
   \             - Toggle request / response tab
   /             - Cycle response status tabs
 
@@ -201,12 +203,21 @@ Environments:
   Esc           - Back to environment list
 
 Manual Request (m):
-  Tab           - Next field
-  a             - Add query / header row
-  d             - Delete selected row
+  Tab           - Next field (path / params / body)
+  p             - Edit path
+  m             - Cycle HTTP method
   e             - Execute request
-  s             - Save request
-  Esc           - Close
+  s             - Save request (opens name/tag dialog)
+  d             - Delete request (only while editing a saved request via 'E')
+  Esc           - Close (discards an unsaved draft)
+  (row editing inside the params table follows the Parameters / Headers
+  table above: j/k move, i edit/add, x delete, c cycle query/header/path)
+
+Save Dialog (s):
+  Tab           - Switch field (name / tag)
+  Left / Right  - Cycle existing tags / create a new one
+  Enter         - Confirm field, then save
+  Esc           - Cancel (back to the builder, back out of new-tag entry)
 ```
 
 ## Features

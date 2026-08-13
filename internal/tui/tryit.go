@@ -413,7 +413,7 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) []string 
 		buttons = append(buttons, button{"Reset (r)", yellowStyle})
 	}
 	buttons = append(buttons, button{"Execute (e)", greenBoldStyle}, button{"Cancel (Esc)", dimStyle})
-	lines = append(lines, renderButtons(buttons), "")
+	lines = append(lines, lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(renderButtons(buttons)), "")
 
 	if op.Summary != "" {
 		lines = append(lines, boldStyle.Render(op.Summary))

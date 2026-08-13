@@ -167,6 +167,57 @@ func TestCustomTagAddIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestRenameCustomTagUpdatesTagAndItsRequests(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore("", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddCustomTag(CustomTag{Name: "billing"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddSavedRequest(SavedRequest{Tag: "billing", Name: "Invoice"}); err != nil {
+		t.Fatal(err)
+	}
+
+	renamed, err := s.RenameCustomTag("billing", "finance")
+	if err != nil || !renamed {
+		t.Fatalf("expected rename to succeed: %v", err)
+	}
+
+	store := s.LoadSavedRequests()
+	if len(store.CustomTags) != 1 || store.CustomTags[0].Name != "finance" {
+		t.Errorf("expected tag renamed, got %+v", store.CustomTags)
+	}
+	if store.Requests[0].Tag != "finance" {
+		t.Errorf("expected request's tag updated too, got %q", store.Requests[0].Tag)
+	}
+}
+
+func TestRenameCustomTagRejectsConflictsAndNoop(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore("", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddCustomTag(CustomTag{Name: "billing"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddCustomTag(CustomTag{Name: "finance"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, err := s.RenameCustomTag("billing", "finance"); err != nil || ok {
+		t.Errorf("expected rename to a name already in use to be rejected")
+	}
+	if ok, err := s.RenameCustomTag("billing", "billing"); err != nil || ok {
+		t.Errorf("expected unchanged rename to be a no-op")
+	}
+	if ok, err := s.RenameCustomTag("billing", ""); err != nil || ok {
+		t.Errorf("expected empty new name to be rejected")
+	}
+}
+
 func TestCollectionScopedVsCwdScopedPaths(t *testing.T) {
 	cwd := t.TempDir()
 	collectionDir := t.TempDir()

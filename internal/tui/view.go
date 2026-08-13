@@ -85,9 +85,18 @@ func (m Model) View() string {
 		body = m.renderHelpPopup(contentHeight, m.Width)
 	case m.ShowInfo:
 		body = m.renderInfoPopup(contentHeight, m.Width)
+	case m.Mode == ModeManual && m.Manual.ShowSaveDialog:
+		body = m.renderSaveDialogOverlay(contentHeight, m.Width)
+	case m.Mode == ModeRenameTag:
+		body = m.renderRenameTagOverlay(contentHeight, m.Width)
 	default:
 		left := m.renderLeftPanel(contentHeight, leftWidth)
-		right := m.renderRightPanel(contentHeight, rightWidth)
+		var right string
+		if m.Mode == ModeManual {
+			right = m.renderManualPanel(contentHeight, rightWidth)
+		} else {
+			right = m.renderRightPanel(contentHeight, rightWidth)
+		}
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	}
 
@@ -137,6 +146,13 @@ func (m Model) renderStatusBar() string {
 	// "avoid duplicating a hint that's already visible" comment).
 	var dynamicHints []hint
 	switch {
+	case m.Mode == ModeManual:
+		dynamicHints = []hint{
+			{"Tab", "section"}, {"i", "edit"}, {"Esc", "cancel"},
+			{"e", "execute"}, {"m", "method"}, {"p", "path"}, {"s", "save"},
+		}
+	case m.Mode == ModeRenameTag:
+		dynamicHints = []hint{{"Enter", "save"}, {"Esc", "cancel"}}
 	case m.Mode == ModeTryIt:
 		dynamicHints = []hint{
 			{"j/k", "navigate"}, {"i", "edit"}, {"Esc", "done/cancel"},
@@ -235,12 +251,24 @@ func (m Model) renderListRow(item FlatListItem, selected bool, width int) string
 		if m.ExpandedTags[item.TagName] {
 			arrow = "▼"
 		}
-		count := len(m.EndpointsByTag[item.TagName])
+		count := len(m.EndpointsByTag[item.TagName]) + len(m.SavedRequestsByTag[item.TagName])
 		style := boldStyle
 		if selected {
 			style = style.Foreground(lipgloss.Color("6")).Reverse(true)
 		}
 		return style.Render(truncate(arrow+" "+item.TagName, width)) + dimStyle.Render(fmt.Sprintf(" (%d)", count))
+	}
+
+	if item.Type == ItemSavedRequest {
+		sr := item.SavedRequest
+		method := padRight(strings.ToUpper(sr.Method), 6)
+		methodStyle := lipgloss.NewStyle().Foreground(MethodColor(sr.Method)).Bold(true)
+		name := truncate(sr.Name+"*", max(width-9, 4))
+		nameStyle := lipgloss.NewStyle()
+		if selected {
+			nameStyle = nameStyle.Reverse(true).Foreground(lipgloss.Color("6"))
+		}
+		return "  " + methodStyle.Render(method) + " " + nameStyle.Render(name)
 	}
 
 	ep := item.Endpoint
@@ -313,17 +341,18 @@ func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, active bool, widt
 	lines = append(lines, MethodBadge(string(ep.Method))+" "+boldStyle.Render(ep.Path))
 	lines = append(lines, "")
 
-	if active {
-		saved := ""
-		if m.Store != nil {
-			if o := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); o != nil {
-				saved = yellowStyle.Render("  *saved params")
-			}
+	// Rendered regardless of which panel is focused (not gated on `active`)
+	// so toggling h/l doesn't make the right panel's content jump as this
+	// banner appears/disappears.
+	saved := ""
+	if m.Store != nil {
+		if o := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); o != nil {
+			saved = yellowStyle.Render("  *saved params")
 		}
-		lines = append(lines, lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(
-			renderButtons([]button{{"Try it out (t)", cyanStyle}, {"Quick execute (e)", greenBoldStyle}})+saved,
-		), "")
 	}
+	lines = append(lines, lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(
+		renderButtons([]button{{"Try it out (t)", cyanStyle}, {"Quick execute (e)", greenBoldStyle}})+saved,
+	), "")
 
 	if op.Summary != "" {
 		lines = append(lines, boldStyle.Render(op.Summary))

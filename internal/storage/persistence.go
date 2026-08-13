@@ -156,6 +156,39 @@ func (s *Store) AddCustomTag(tag CustomTag) error {
 	return s.SaveSavedRequests(store)
 }
 
+// RenameCustomTag renames a custom tag and every saved request tagged with
+// it, matching useSavedRequests.ts's renameTag: refuses empty/unchanged
+// names and names already in use by another tag or request.
+func (s *Store) RenameCustomTag(oldName, newName string) (bool, error) {
+	if newName == "" || oldName == newName {
+		return false, nil
+	}
+	store := s.LoadSavedRequests()
+	for _, t := range store.CustomTags {
+		if t.Name == newName {
+			return false, nil
+		}
+	}
+	for _, r := range store.Requests {
+		if r.Tag == newName {
+			return false, nil
+		}
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i := range store.CustomTags {
+		if store.CustomTags[i].Name == oldName {
+			store.CustomTags[i].Name = newName
+		}
+	}
+	for i := range store.Requests {
+		if store.Requests[i].Tag == oldName {
+			store.Requests[i].Tag = newName
+			store.Requests[i].UpdatedAt = now
+		}
+	}
+	return true, s.SaveSavedRequests(store)
+}
+
 func (s *Store) DeleteCustomTag(tagName string) (bool, error) {
 	store := s.LoadSavedRequests()
 	initialLen := len(store.CustomTags)

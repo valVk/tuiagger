@@ -18,13 +18,18 @@ func loadTestSpec(t *testing.T) *openapi.ParsedSpec {
 
 func key(s string) tea.KeyMsg {
 	switch s {
-	case "j", "k", "g", "G", "h", "l", "c", "x", "q", "/", "[", "?",
-		"t", "e", "i", "d", "m", "p", "r", "y", "n", "Y", "N", "J", "K", "v":
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	case "enter":
 		return tea.KeyMsg{Type: tea.KeyEnter}
 	case "down":
 		return tea.KeyMsg{Type: tea.KeyDown}
+	case "up":
+		return tea.KeyMsg{Type: tea.KeyUp}
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
+	case "backspace":
+		return tea.KeyMsg{Type: tea.KeyBackspace}
 	case "esc":
 		return tea.KeyMsg{Type: tea.KeyEsc}
 	case "tab":
@@ -32,7 +37,20 @@ func key(s string) tea.KeyMsg {
 	case "ctrl+r":
 		return tea.KeyMsg{Type: tea.KeyCtrlR}
 	}
-	panic("unhandled key " + s)
+	// Any other single rune (letters, digits, punctuation) is a plain
+	// KeyRunes press — covers the growing set of single-char bindings
+	// (m/p/s/d/a/R/D/E/etc.) without hand-listing each one here.
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// typeText sends each rune of s as its own KeyRunes press, matching how a
+// real terminal delivers typed text to a focused textinput.
+func typeText(m Model, s string) Model {
+	for _, r := range s {
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(Model)
+	}
+	return m
 }
 
 func step(m Model, keys ...string) Model {

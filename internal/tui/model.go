@@ -28,6 +28,8 @@ type Mode int
 const (
 	ModeBrowse Mode = iota
 	ModeTryIt
+	ModeManual
+	ModeRenameTag
 )
 
 // tryItState holds everything scoped to one endpoint's try-it-out session.
@@ -54,18 +56,24 @@ type Model struct {
 	CollectionName string
 	SelectedServer int
 
-	AllTags        []string
-	EndpointsByTag map[string][]openapi.ParsedEndpoint
-	ExpandedTags   map[string]bool
-	FlatList       []FlatListItem
+	AllTags            []string
+	EndpointsByTag     map[string][]openapi.ParsedEndpoint
+	SavedRequests      []storage.SavedRequest
+	SavedRequestsByTag map[string][]storage.SavedRequest
+	CustomTags         []storage.CustomTag
+	ExpandedTags       map[string]bool
+	FlatList           []FlatListItem
 
 	ActivePanel ActivePanel
 	LeftIndex   int
 	RightScroll int
 	ResponseTab int // index into the selected endpoint's sorted response codes
 
-	Mode  Mode
-	TryIt tryItState
+	Mode             Mode
+	TryIt            tryItState
+	Manual           manualState
+	RenameTag        renameTagState
+	TagDeleteConfirm string // custom tag name pending 'D' confirmation, "" = none
 
 	Response *request.Response
 	Curl     string
@@ -112,7 +120,7 @@ func New(spec *openapi.ParsedSpec, collectionName string) Model {
 		ExpandedTags:   expanded,
 		ActivePanel:    PanelLeft,
 	}
-	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.ExpandedTags)
+	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
 	return m
 }
 
@@ -122,7 +130,73 @@ func New(spec *openapi.ParsedSpec, collectionName string) Model {
 func (m Model) WithServices(client request.HTTPClient, store *storage.Store) Model {
 	m.HTTPClient = client
 	m.Store = store
+	return m.refreshSavedRequests()
+}
+
+// refreshSavedRequests reloads saved requests/custom tags from disk and
+// recomputes AllTags/FlatList, matching useSavedRequests.ts's store-backed
+// getAllTags — called after any CRUD on saved requests or custom tags.
+func (m Model) refreshSavedRequests() Model {
+	if m.Store == nil {
+		return m
+	}
+	store := m.Store.LoadSavedRequests()
+	m.SavedRequests = store.Requests
+	m.CustomTags = store.CustomTags
+	m.SavedRequestsByTag = groupByTag(store.Requests)
+	m.AllTags = computeAllTags(m.Spec.Tags, store.CustomTags, store.Requests)
+	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
+	m.LeftIndex = m.safeLeftIndex()
 	return m
+}
+
+func groupByTag(reqs []storage.SavedRequest) map[string][]storage.SavedRequest {
+	out := map[string][]storage.SavedRequest{}
+	for i := range reqs {
+		out[reqs[i].Tag] = append(out[reqs[i].Tag], reqs[i])
+	}
+	return out
+}
+
+// computeAllTags matches useSavedRequests.ts's getAllTags:
+// [...new Set([...specTags, ...customTagNames, ...requestTagNames])].
+func computeAllTags(specTags []string, customTags []storage.CustomTag, reqs []storage.SavedRequest) []string {
+	seen := make(map[string]bool)
+	var out []string
+	add := func(t string) {
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	for _, t := range specTags {
+		add(t)
+	}
+	for _, t := range customTags {
+		add(t.Name)
+	}
+	for _, r := range reqs {
+		add(r.Tag)
+	}
+	return out
+}
+
+// isEditingText reports whether a textinput is currently focused anywhere
+// in the app — used to keep single-character bindings like 'q' from being
+// swallowed as a global shortcut while the user is typing.
+func (m Model) isEditingText() bool {
+	return m.TryIt.EditingPath || m.TryIt.ParamEditing ||
+		m.Manual.EditingPath || m.Manual.ParamEditing || m.Manual.EditingBody ||
+		m.Manual.ShowSaveDialog || m.Mode == ModeRenameTag
+}
+
+func (m Model) isCustomTag(name string) bool {
+	for _, t := range m.CustomTags {
+		if t.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // WithSource records where the spec was loaded from, enabling Ctrl+R reload.
@@ -192,11 +266,11 @@ func (m Model) applyReload(msg reloadMsg) Model {
 	}
 	m.SpecError = ""
 	m.Spec = msg.spec
-	m.AllTags = msg.spec.Tags
+	m.AllTags = computeAllTags(msg.spec.Tags, m.CustomTags, m.SavedRequests)
 	m.EndpointsByTag = openapi.GetEndpointsByTag(msg.spec.Endpoints)
 	// Preserve which tags were expanded across the reload, same as TS
 	// (usePanelNavigation's expandedTags is untouched by a spec refresh).
-	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.ExpandedTags)
+	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
 	m.LeftIndex = m.safeLeftIndex()
 	m.Mode = ModeBrowse
 	m.Response = nil
@@ -211,8 +285,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// 'q' always quits, even mid-reload or on the full-screen error view —
 	// matches the TS app's onQuit binding staying mounted regardless of
-	// what App.tsx is currently rendering.
-	if key == "q" {
+	// what App.tsx is currently rendering. The one exception: while a
+	// textinput is focused, 'q' must reach it as a literal character
+	// (typing a path/param/body containing the letter 'q') rather than
+	// quitting the app out from under the user.
+	if key == "q" && !m.isEditingText() {
 		m.Quitting = true
 		return m, tea.Quit
 	}
@@ -239,8 +316,51 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleInfoKey(key)
 	}
 
+	if m.Mode == ModeManual {
+		return m.handleManualKey(msg)
+	}
+	if m.Mode == ModeRenameTag {
+		return m.handleRenameTagKey(msg)
+	}
 	if m.Mode == ModeTryIt {
 		return m.handleTryItKey(msg)
+	}
+
+	// Matches useAppKeyboard.ts's tagDeleteConfirm intercept: takes over
+	// input entirely (browse mode only) until y/n/Esc resolves it.
+	if m.TagDeleteConfirm != "" {
+		switch key {
+		case "y":
+			if m.Store != nil {
+				m.Store.DeleteCustomTag(m.TagDeleteConfirm)
+			}
+			m.TagDeleteConfirm = ""
+			return m.refreshSavedRequests(), nil
+		case "n", "esc":
+			m.TagDeleteConfirm = ""
+			return m, nil
+		}
+		return m, nil
+	}
+
+	// R/D on a custom tag and E/D on a saved request work regardless of
+	// which panel is active, matching useAppKeyboard.ts's browse-mode
+	// handler (checked ahead of h/l/j/k navigation).
+	if item := m.selectedItem(); item != nil {
+		switch {
+		case key == "R" && item.Type == ItemTag && m.isCustomTag(item.TagName):
+			return m.enterRenameTag(item.TagName), nil
+		case key == "D" && item.Type == ItemTag && m.isCustomTag(item.TagName):
+			m.TagDeleteConfirm = item.TagName
+			return m, nil
+		case key == "E" && item.Type == ItemSavedRequest:
+			return m.enterManualEdit(item.SavedRequest), nil
+		case key == "D" && item.Type == ItemSavedRequest:
+			if m.Store != nil {
+				m.Store.DeleteSavedRequest(item.SavedRequest.ID)
+			}
+			return m.refreshSavedRequests(), nil
+		}
 	}
 
 	switch key {
@@ -267,6 +387,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.enterTryIt(), nil
 		}
 		return m, nil
+	case "m":
+		return m.enterManualNew(), nil
 	}
 
 	if m.ActivePanel == PanelLeft {
@@ -341,12 +463,12 @@ func (m Model) handleLeftPanelKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "c":
 		m.ExpandedTags = make(map[string]bool)
-		m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.ExpandedTags)
+		m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
 		m.LeftIndex = 0
 		return m, nil
 	case "x":
 		m.ExpandedTags = allExpanded(m.AllTags)
-		m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.ExpandedTags)
+		m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
 		return m, nil
 	}
 	return m, nil
@@ -372,10 +494,17 @@ func (m Model) handleRightPanelKey(key string) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "e":
-		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
-			cmd := m.quickExecuteCmd(item.Endpoint)
-			m.Loading = true
-			return m, cmd
+		if item := m.selectedItem(); item != nil {
+			switch item.Type {
+			case ItemEndpoint:
+				cmd := m.quickExecuteCmd(item.Endpoint)
+				m.Loading = true
+				return m, cmd
+			case ItemSavedRequest:
+				cmd := m.savedRequestExecuteCmd(item.SavedRequest)
+				m.Loading = true
+				return m, cmd
+			}
 		}
 		return m, nil
 	}
@@ -387,7 +516,7 @@ func (m *Model) toggleTag(tagName string) {
 	maps.Copy(next, m.ExpandedTags)
 	next[tagName] = !next[tagName]
 	m.ExpandedTags = next
-	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.ExpandedTags)
+	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
 }
 
 func allExpanded(tags []string) map[string]bool {

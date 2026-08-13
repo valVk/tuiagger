@@ -43,13 +43,15 @@ func TestViewShowsEndpointDetailsWhenSelected(t *testing.T) {
 	}
 }
 
-func TestActionBannerShownOnlyWhenRightPanelActive(t *testing.T) {
+func TestActionBannerShownRegardlessOfActivePanel(t *testing.T) {
 	m := firstEndpointModel(t)
 
-	// Left panel focused: no action banner (matches TS's `isActive` gate).
+	// The banner renders unconditionally now — gating it on `active` made
+	// the right panel's content jump vertically every time focus toggled
+	// between panels (h/l), since the banner popped in/out.
 	leftOut := strings.Join(m.renderEndpointLines(m.selectedItem().Endpoint, false, 80), "\n")
-	if strings.Contains(leftOut, "Try it out") {
-		t.Errorf("expected no action banner while left panel focused")
+	if !strings.Contains(leftOut, "Try it out (t)") || !strings.Contains(leftOut, "Quick execute (e)") {
+		t.Errorf("expected action banner while left panel focused too, got:\n%s", leftOut)
 	}
 
 	rightOut := strings.Join(m.renderEndpointLines(m.selectedItem().Endpoint, true, 80), "\n")
