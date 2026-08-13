@@ -61,16 +61,19 @@ func step(m Model, keys ...string) Model {
 	return m
 }
 
-func TestNewExpandsAllTagsInitially(t *testing.T) {
+// TestNewCollapsesAllTagsInitially is a deliberate divergence from TS
+// (usePanelNavigation.ts starts with every tag expanded) — see New's doc
+// comment.
+func TestNewCollapsesAllTagsInitially(t *testing.T) {
 	m := New(loadTestSpec(t), "")
 	for _, tag := range m.AllTags {
-		if !m.ExpandedTags[tag] {
-			t.Errorf("expected tag %q to start expanded", tag)
+		if m.ExpandedTags[tag] {
+			t.Errorf("expected tag %q to start collapsed", tag)
 		}
 	}
-	// With everything expanded, the flat list must contain every endpoint.
-	if len(m.FlatList) != len(m.AllTags)+len(m.Spec.Endpoints) {
-		t.Errorf("expected flat list to include all tags+endpoints, got %d items", len(m.FlatList))
+	// With everything collapsed, the flat list must contain only tag rows.
+	if len(m.FlatList) != len(m.AllTags) {
+		t.Errorf("expected flat list to include only tag rows, got %d items", len(m.FlatList))
 	}
 }
 
@@ -114,17 +117,17 @@ func TestToggleTagCollapsesAndExpands(t *testing.T) {
 	firstTag := m.FlatList[0].TagName
 	initialLen := len(m.FlatList)
 
-	m = step(m, "enter") // collapse the first (selected) tag row
-	if m.ExpandedTags[firstTag] {
-		t.Errorf("expected tag %q to collapse", firstTag)
+	m = step(m, "enter") // expand the first (selected, collapsed by default) tag row
+	if !m.ExpandedTags[firstTag] {
+		t.Errorf("expected tag %q to expand", firstTag)
 	}
-	if len(m.FlatList) >= initialLen {
-		t.Errorf("expected flat list to shrink after collapsing a tag")
+	if len(m.FlatList) <= initialLen {
+		t.Errorf("expected flat list to grow after expanding a tag")
 	}
 
-	m = step(m, "enter") // expand it back
-	if !m.ExpandedTags[firstTag] {
-		t.Errorf("expected tag %q to re-expand", firstTag)
+	m = step(m, "enter") // collapse it back
+	if m.ExpandedTags[firstTag] {
+		t.Errorf("expected tag %q to re-collapse", firstTag)
 	}
 	if len(m.FlatList) != initialLen {
 		t.Errorf("expected flat list to return to original length, got %d want %d", len(m.FlatList), initialLen)
@@ -177,8 +180,9 @@ func TestNavigatingLeftPanelResetsRightScrollAndResponseTab(t *testing.T) {
 
 func TestResponseTabCyclingOnlyOnEndpointRows(t *testing.T) {
 	m := New(loadTestSpec(t), "")
-	// Navigate to an endpoint row (tag row is index 0; index 1 should be an endpoint).
-	m = step(m, "j", "l")
+	// Expand the first (collapsed by default) tag, then navigate onto its
+	// first endpoint row.
+	m = step(m, "enter", "j", "l")
 	item := m.selectedItem()
 	if item == nil || item.Type != ItemEndpoint {
 		t.Fatalf("expected an endpoint selected, got %+v", item)
@@ -226,5 +230,12 @@ func TestWindowSizeMsgSetsDimensions(t *testing.T) {
 	nm := next.(Model)
 	if nm.Width != 120 || nm.Height != 40 {
 		t.Errorf("expected dimensions to be set, got %dx%d", nm.Width, nm.Height)
+	}
+}
+
+func TestInitReturnsNoCmd(t *testing.T) {
+	m := New(loadTestSpec(t), "")
+	if m.Init() != nil {
+		t.Errorf("expected Init to return no command")
 	}
 }

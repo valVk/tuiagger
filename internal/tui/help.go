@@ -36,6 +36,8 @@ var helpSections = []helpSection{
 		{"Enter", "Expand / collapse tag"},
 		{"g / G", "First / last item"},
 		{"c / x", "Collapse / expand all tags"},
+		{"R", "Rename custom tag"},
+		{"D", "Delete custom tag (confirm if non-empty)"},
 	}},
 	{"RIGHT PANEL (browse)", []helpEntry{
 		{"j / k", "Scroll up / down"},
@@ -73,6 +75,7 @@ var helpSections = []helpSection{
 	}},
 	{"RESPONSE BODY", []helpEntry{
 		{"J / K", "Scroll down / up"},
+		{"j / k", "Also work as J/K while selecting"},
 		{"g / G", "Jump to top / bottom"},
 		{"v", "Toggle visual selection"},
 		{"y", "Yank selection (or full body)"},
@@ -92,12 +95,13 @@ var helpSections = []helpSection{
 		{"Esc", "Back to env list"},
 	}},
 	{"MANUAL REQUEST  (m)", []helpEntry{
-		{"Tab", "Next field"},
-		{"a", "Add query / header row"},
-		{"d", "Delete selected row"},
+		{"Tab", "Next field (path / params / body)"},
+		{"p", "Edit path"},
+		{"m", "Cycle HTTP method"},
 		{"e", "Execute request"},
-		{"s", "Save request"},
-		{"Esc", "Close"},
+		{"s", "Save request (name/tag dialog)"},
+		{"d", "Delete (only while editing a saved request)"},
+		{"Esc", "Close (discards unsaved draft)"},
 	}},
 }
 
@@ -165,7 +169,16 @@ func renderHelpLine(l helpLine) string {
 	if l.isHeader {
 		return cyanStyle.Bold(true).Render(truncate(l.title, helpKeyWidth+helpDescWidth))
 	}
-	return padRight(yellowStyle.Render(truncate(l.keys, helpKeyWidth)), helpKeyWidth) +
+	// Pad the plain key text to width *before* styling it, not after —
+	// padRight measures len(), which counts ANSI escape bytes once a style
+	// is applied. Styling first made any key of ~8+ visible chars (e.g.
+	// "Ctrl+R") already exceed helpKeyWidth in raw byte length, so padRight
+	// added zero padding and the description ran straight into the key
+	// with no gap at all. Found while visually verifying this cheatsheet
+	// through the pty harness — the same class of styling-vs-layout-math
+	// bug as this session's other fixes, just manifesting as misalignment
+	// instead of overflow.
+	return yellowStyle.Render(padRight(truncate(l.keys, helpKeyWidth), helpKeyWidth)) +
 		dimStyle.Render(truncate(l.desc, helpDescWidth))
 }
 
@@ -205,7 +218,7 @@ func (m Model) renderHelpPopup(height, width int) string {
 	content := title + "\n" + body
 
 	return lipgloss.NewStyle().
-		Width(width).
+		Width(width-2).
 		Height(height).
 		Padding(0, 1).
 		BorderStyle(lipgloss.DoubleBorder()).

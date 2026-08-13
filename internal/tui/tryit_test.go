@@ -23,12 +23,13 @@ func newTestStore(t *testing.T) *storage.Store {
 }
 
 // firstEndpointModel returns a Model with the left panel positioned on the
-// first endpoint row (index 1 — index 0 is that endpoint's tag).
+// first endpoint row (tags start collapsed, so the first tag row is
+// expanded first).
 func firstEndpointModel(t *testing.T) Model {
 	m := New(loadTestSpec(t), "")
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = next.(Model)
-	m = step(m, "j") // move onto the first endpoint row
+	m = step(m, "enter", "j") // expand the first tag, move onto its first endpoint row
 	if item := m.selectedItem(); item == nil || item.Type != ItemEndpoint {
 		t.Fatalf("expected an endpoint selected, got %+v", item)
 	}
@@ -41,6 +42,7 @@ func endpointWithParamsModel(t *testing.T) Model {
 	m := New(loadTestSpec(t), "")
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = next.(Model)
+	m = step(m, "x") // expand all tags so every endpoint row is in FlatList
 	for i, item := range m.FlatList {
 		if item.Type == ItemEndpoint && len(item.Endpoint.Operation.Parameters) > 0 {
 			m.LeftIndex = i
@@ -57,6 +59,7 @@ func endpointWithBodyModel(t *testing.T) Model {
 	m := New(loadTestSpec(t), "")
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = next.(Model)
+	m = step(m, "x") // expand all tags so every endpoint row is in FlatList
 	for i, item := range m.FlatList {
 		if item.Type == ItemEndpoint && item.Endpoint.Operation.RequestBody != nil {
 			m.LeftIndex = i
@@ -246,6 +249,33 @@ func TestResetConfirmFlow(t *testing.T) {
 	}
 }
 
+// TestResetThenExitDoesNotResurrectOverride is a regression test: exitTryIt
+// used to unconditionally re-save an override on every Esc exit, even an
+// empty one — so pressing 'r'/'y' to reset, then Esc to leave (the natural
+// next step), silently recreated an empty-but-present override, bringing
+// back the "*saved params"/"~" indicators right after a reset and making it
+// look like the reset didn't take. Found via a live pty capture against the
+// compiled binary, not a unit test failure — see HANDOFF.md.
+func TestResetThenExitDoesNotResurrectOverride(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = m.WithServices(nil, newTestStore(t))
+	item := m.selectedItem()
+	ep := item.Endpoint
+	m.Store.SaveEndpointOverride(string(ep.Method), ep.Path, storage.EndpointOverride{
+		Params: map[string]string{"a": "b"}, CustomParams: []storage.CustomParameter{}, DisabledParams: []string{},
+	})
+
+	m = step(m, "t", "r", "y") // enter try-it, reset, confirm
+	if got := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); got != nil {
+		t.Fatalf("setup: expected override deleted immediately after reset, got %+v", got)
+	}
+
+	m = step(m, "esc") // exit try-it the normal way
+	if got := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); got != nil {
+		t.Errorf("expected override to stay deleted after a normal exit, got %+v", got)
+	}
+}
+
 func TestQuickExecuteFromBrowseUsesStubClient(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -259,6 +289,91 @@ func TestQuickExecuteFromBrowseUsesStubClient(t *testing.T) {
 	m = step(m, "l", "e")
 	if !m.Loading {
 		t.Fatalf("expected Loading to be set immediately after 'e'")
+	}
+}
+
+// TestQuickExecuteWorksFromLeftPanel is a regression test: 'e' quick-execute
+// used to only work after pressing 'l' to focus the right panel, since it
+// was handled in handleRightPanelKey — but useAppKeyboard.ts's real 'e'
+// binding (confirmed by reading it) is gated only on `mode === 'browse'`,
+// with no panel check at all, so it must fire with the left panel focused
+// too (the default on entry). Found via a user report ("I could tryout from
+// left panel, but I could not quick execute e").
+func TestQuickExecuteWorksFromLeftPanel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := firstEndpointModel(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), newTestStore(t))
+
+	if m.ActivePanel != PanelLeft {
+		t.Fatalf("setup: expected left panel focused by default")
+	}
+	m = step(m, "e")
+	if !m.Loading {
+		t.Fatalf("expected 'e' to quick-execute from the left panel without pressing 'l' first")
+	}
+}
+
+// TestResponseScrollsIntoViewAfterExecute is a regression test for a
+// usability gap flagged by the user: after executing, the response could
+// land below the visible viewport with no indication it had arrived,
+// requiring a manual scroll down every time. Deliberate improvement over
+// TS, not a port of it — App.tsx just resets scroll to 0 (top of doc) after
+// executing, matched exactly by TestEnterTryItResetsRightScroll's own
+// entering-try-it-out case, but that doesn't reveal the response unless it
+// happens to fit above the fold. See scrollToResponse's doc comment.
+func TestResponseScrollsIntoViewAfterExecute(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	m := endpointWithBodyModel(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), newTestStore(t))
+	// A short viewport guarantees the endpoint's docs+params+body push the
+	// response section below the fold, so a real scroll is required to
+	// reveal it — a tall window could pass even with scrollToResponse
+	// broken, if everything already fits on screen.
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 15})
+	m = next.(Model)
+
+	next, cmd := m.Update(key("e"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatalf("expected a non-nil execute command")
+	}
+	msg := cmd()
+	next2, _ := m.Update(msg)
+	m = next2.(Model)
+
+	if m.Response == nil {
+		t.Fatalf("expected a response")
+	}
+	if m.RightScroll == 0 {
+		t.Errorf("expected RightScroll to advance to reveal the response section, got 0")
+	}
+
+	// Regression: an earlier version landed the response a few lines below
+	// the top of the viewport (bleeding in trailing content from the
+	// section above it, found from a user screenshot comparison) because
+	// it clamped the scroll offset to avoid dangling blank rows at the
+	// bottom — the "RESPONSE ..." heading must be the *first* visible
+	// line, not just somewhere on screen.
+	out := m.View()
+	if idx := strings.Index(out, "RESPONSE"); idx == -1 {
+		t.Fatalf("expected the response heading to render at all")
+	} else {
+		line := strings.Count(out[:idx], "\n")
+		// Header (3 rows) + panel top border (1 row) = first content row
+		// is line 4 (0-indexed).
+		if line != 4 {
+			t.Errorf("expected 'RESPONSE' on the panel's first content row (line 4), got line %d:\n%s", line, out)
+		}
 	}
 }
 
@@ -395,6 +510,70 @@ func TestLowercaseJKExtendsSelectionInTryItMode(t *testing.T) {
 	}
 	if got := m.Viewer.selectedText(); got != "l0\nl1\nl2" {
 		t.Errorf("expected 3-line selection via lowercase j in try-it-out, got %q", got)
+	}
+}
+
+// TestKAtFirstParamRowEntersHeadersFocus matches ParametersSection.tsx's
+// onTabBack: pressing 'k' at the first PARAMETERS row (cursor 0) moves focus
+// up into the HEADERS section instead of doing nothing.
+func TestKAtFirstParamRowEntersHeadersFocus(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = step(m, "t")
+	if m.TryIt.ParamCursor != 0 {
+		t.Fatalf("expected to start on the first PARAMETERS row, got cursor %d", m.TryIt.ParamCursor)
+	}
+	m = step(m, "k")
+	if !m.TryIt.HeadersFocused {
+		t.Errorf("expected 'k' at the first param row to focus HEADERS")
+	}
+}
+
+// TestAddHeaderViaHeadersSection exercises the full add-header flow: enter
+// HEADERS focus, 'i' to start adding, type a name, Tab to the value field,
+// type a value, Enter to commit — matches useHeadersNavigation.ts's
+// insertMode branch.
+func TestAddHeaderViaHeadersSection(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = step(m, "t", "k") // enter try-it, focus HEADERS
+	if !m.TryIt.HeadersFocused {
+		t.Fatalf("expected HEADERS focused")
+	}
+	m = step(m, "i")
+	if !m.TryIt.HeaderEditing {
+		t.Fatalf("expected 'i' to start editing the add-new header row")
+	}
+	m = typeText(m, "X-Test")
+	m = step(m, "tab")
+	m = typeText(m, "hello")
+	m = step(m, "enter")
+
+	if m.TryIt.HeaderEditing {
+		t.Errorf("expected editing to end after Enter")
+	}
+	headerParams, _ := splitCustomParams(m.TryIt.CustomParams)
+	if len(headerParams) != 1 || headerParams[0].Name != "X-Test" || headerParams[0].Value != "hello" {
+		t.Fatalf("expected one header param X-Test=hello, got %+v", headerParams)
+	}
+	if headerParams[0].In != "header" {
+		t.Errorf("expected new header param to have In=\"header\", got %q", headerParams[0].In)
+	}
+}
+
+// TestHeaderParamsExcludedFromParametersSection ensures a header-typed
+// CustomParameter never counts toward the PARAMETERS table's row math
+// (cursor bounds, x/c index math) — the two sections must stay independent
+// even though they share one underlying CustomParams slice.
+func TestHeaderParamsExcludedFromParametersSection(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = step(m, "t", "k", "i")
+	m = typeText(m, "X-Test")
+	m = step(m, "tab")
+	m = typeText(m, "hello")
+	m = step(m, "enter")
+
+	_, nonHeader := splitCustomParams(m.TryIt.CustomParams)
+	if len(nonHeader) != 0 {
+		t.Errorf("expected the header param to be excluded from PARAMETERS' custom list, got %+v", nonHeader)
 	}
 }
 

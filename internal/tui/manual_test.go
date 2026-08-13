@@ -1,10 +1,14 @@
 package tui
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/storage"
 )
 
@@ -65,32 +69,45 @@ func TestManualCycleMethod(t *testing.T) {
 	}
 }
 
-func TestManualTabCyclesFocus(t *testing.T) {
+// TestManualDefaultFocusIsParametersWithBoundaryCrossing replaces the old
+// Tab-cycling test: useManualPanelKeyboard.ts (confirmed by reading it, not
+// assumed) has no Tab-driven section cycling at all — PARAMETERS is the
+// default focus, and 'k'/'j' at its top/bottom boundary cross into
+// HEADERS/BODY, matching useRightPanelKeyboard.ts's try-it-out model
+// exactly (see tryit.go's handleTryItKey).
+func TestManualDefaultFocusIsParametersWithBoundaryCrossing(t *testing.T) {
 	m := modelWithStore(t)
 	m = step(m, "m")
-	if m.Manual.Focus != manualFocusPath {
-		t.Fatalf("expected initial focus on path")
+	if m.Manual.HeadersFocused || m.Manual.BodyFocused {
+		t.Fatalf("expected PARAMETERS to be the default focus")
 	}
-	m = step(m, "tab")
-	if m.Manual.Focus != manualFocusParams {
-		t.Errorf("expected focus to move to params, got %v", m.Manual.Focus)
+
+	// 'k' at the first (only) PARAMETERS row moves focus up into HEADERS.
+	m = step(m, "k")
+	if !m.Manual.HeadersFocused {
+		t.Errorf("expected 'k' at param row 0 to focus HEADERS")
 	}
-	// GET has no body section, so Tab from params wraps back to path.
-	m = step(m, "tab")
-	if m.Manual.Focus != manualFocusPath {
-		t.Errorf("expected focus to wrap to path for a bodyless method, got %v", m.Manual.Focus)
+	m = step(m, "j") // exit HEADERS back down (boundary crossing both ways)
+	if m.Manual.HeadersFocused {
+		t.Errorf("expected 'j' at the HEADERS add-row to exit back to PARAMETERS")
+	}
+
+	// GET has no body section, so 'j' at the last param row is a no-op.
+	m = step(m, "j")
+	if m.Manual.BodyFocused {
+		t.Errorf("expected 'j' to be a no-op with no BODY section (GET)")
 	}
 
 	m = step(m, "m") // cycle method to POST, which does have a body
-	m = step(m, "tab", "tab")
-	if m.Manual.Focus != manualFocusBody {
-		t.Errorf("expected focus to reach body for POST, got %v", m.Manual.Focus)
+	m = step(m, "j")
+	if !m.Manual.BodyFocused {
+		t.Errorf("expected 'j' at the last param row to focus BODY for POST")
 	}
 }
 
 func TestManualAddParamRow(t *testing.T) {
 	m := modelWithStore(t)
-	m = step(m, "m", "tab") // focus params, cursor on the add-new row
+	m = step(m, "m") // default focus is already PARAMETERS, cursor on the add-new row
 	if m.Manual.ParamCursor != 0 || len(m.Manual.Params) != 0 {
 		t.Fatalf("expected cursor 0 on empty params, got %d/%d", m.Manual.ParamCursor, len(m.Manual.Params))
 	}
@@ -114,7 +131,7 @@ func TestManualAddParamRow(t *testing.T) {
 
 func TestManualDeleteParamRow(t *testing.T) {
 	m := modelWithStore(t)
-	m = step(m, "m", "tab", "i")
+	m = step(m, "m", "i")
 	m = typeText(m, "a")
 	m = step(m, "tab")
 	m = typeText(m, "b")
@@ -128,17 +145,214 @@ func TestManualDeleteParamRow(t *testing.T) {
 	}
 }
 
+// TestManualAddHeaderViaHeadersSection is the manual-builder counterpart to
+// tryit_test.go's TestAddHeaderViaHeadersSection: 'k' at the default
+// PARAMETERS focus (row 0) enters HEADERS, 'i' adds a new header row, and
+// the result must be excluded from the PARAMETERS table's own row math.
+func TestManualAddHeaderViaHeadersSection(t *testing.T) {
+	m := modelWithStore(t)
+	m = step(m, "m", "k")
+	if !m.Manual.HeadersFocused {
+		t.Fatalf("expected 'k' at param row 0 to focus HEADERS")
+	}
+	m = step(m, "i")
+	if !m.Manual.HeaderEditing {
+		t.Fatalf("expected 'i' to start editing the add-new header row")
+	}
+	m = typeText(m, "X-Test")
+	m = step(m, "tab")
+	m = typeText(m, "hello")
+	m = step(m, "enter")
+
+	if m.Manual.HeaderEditing {
+		t.Errorf("expected editing to end after Enter")
+	}
+	headerParams, params := splitCustomParams(m.Manual.Params)
+	if len(headerParams) != 1 || headerParams[0].Name != "X-Test" || headerParams[0].Value != "hello" {
+		t.Fatalf("expected one header param X-Test=hello, got %+v", headerParams)
+	}
+	if headerParams[0].In != "header" {
+		t.Errorf("expected new header param to have In=\"header\", got %q", headerParams[0].In)
+	}
+	if len(params) != 0 {
+		t.Errorf("expected the header param excluded from PARAMETERS, got %+v", params)
+	}
+}
+
+// TestManualCycleParamType matches ParametersSection.tsx's AddNewParamRow
+// type field (`'query' | 'path'` — confirmed by reading it): 'c' cycles
+// only query<->path in PARAMETERS now that header-typed params live in
+// their own HEADERS section (added a header can only ever be created
+// there, always with In="header", never via cycling — see
+// TestManualAddHeaderViaHeadersSection).
 func TestManualCycleParamType(t *testing.T) {
 	m := modelWithStore(t)
-	m = step(m, "m", "tab", "i")
+	m = step(m, "m", "i")
 	m = typeText(m, "a")
 	m = step(m, "tab")
 	m = typeText(m, "b")
 	m = step(m, "enter")
 
 	m = step(m, "c")
-	if m.Manual.Params[0].In != "header" {
-		t.Errorf("expected type to cycle to header, got %q", m.Manual.Params[0].In)
+	if m.Manual.Params[0].In != "path" {
+		t.Errorf("expected type to cycle to path, got %q", m.Manual.Params[0].In)
+	}
+}
+
+// TestManualBodyEditorSupportsMultipleLines is a regression test for the
+// Phase 7 unification: the manual builder's body field used to be a
+// single-line bubbles/textinput (Phase 4 scope cut), unlike try-it-out's
+// bubbles/textarea. Enter must insert a newline (not commit/close editing)
+// and Esc must be what ends editing, matching tryit.go's body editor
+// exactly now that both share the same widget.
+func TestManualBodyEditorSupportsMultipleLines(t *testing.T) {
+	m := modelWithStore(t)
+	m = step(m, "m", "m") // cycle to POST, which has a BODY section
+	m = step(m, "j", "i") // 'j' at the (empty) last param row focuses BODY, 'i' starts editing
+	if !m.Manual.EditingBody {
+		t.Fatalf("expected body editing to start")
+	}
+	m = typeText(m, "line1")
+	m = step(m, "enter")
+	m = typeText(m, "line2")
+	if m.Manual.EditingBody != true {
+		t.Fatalf("expected Enter to insert a newline, not end editing")
+	}
+	if !strings.Contains(m.Manual.BodyInput.Value(), "\n") {
+		t.Errorf("expected a newline in the textarea value, got %q", m.Manual.BodyInput.Value())
+	}
+
+	m = step(m, "esc")
+	if m.Manual.EditingBody {
+		t.Errorf("expected Esc to end editing")
+	}
+	if m.Manual.Body != "line1\nline2" {
+		t.Errorf("expected multi-line body committed, got %q", m.Manual.Body)
+	}
+}
+
+// TestManualBodyEditorShowsDoneHint mirrors
+// TestBodyEditingShowsDoneHint/TestBodyEditingHintNotShownWhenIdle in
+// tryit_body_test.go for the now-shared body editor.
+func TestManualBodyEditorShowsDoneHint(t *testing.T) {
+	m := modelWithStore(t)
+	m = step(m, "m", "m", "j", "i")
+	out := m.renderManualPanel(60, 150)
+	if !strings.Contains(out, "Esc: done") {
+		t.Errorf("expected an 'Esc: done' hint while editing the manual body, got:\n%s", out)
+	}
+}
+
+// TestManualExecuteSendsRealHTTPRequest is a coverage-gap fix: 'e' in the
+// manual builder returned a Loading=true + non-nil cmd, and every existing
+// test stopped there, verified via state assertions only. Nothing actually
+// invoked the returned tea.Cmd, so manualExecuteCmd/runRequestCmd — the
+// code that builds and sends the real HTTP request — had 0% test coverage
+// despite the feature being fully wired. Found via `go test -cover` during
+// the Phase 7 hardening pass, not a reported bug.
+func TestManualExecuteSendsRealHTTPRequest(t *testing.T) {
+	var gotMethod, gotPath, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := modelWithStore(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), m.Store)
+	m = step(m, "m", "m") // cycle to POST
+	m = step(m, "p")
+	m = typeText(m, "/widgets")
+	m = step(m, "enter")  // commit path
+	m = step(m, "j", "i") // 'j' at the empty last param row focuses BODY
+	m = typeText(m, `{"ok":true}`)
+	m = step(m, "esc") // commit body (still BodyFocused, matches TS: 'e' is swallowed there too)
+	m = step(m, "k")   // exit BodyFocused back to PARAMETERS so 'e' reaches the top-level execute binding
+
+	next, cmd := m.Update(key("e"))
+	m = next.(Model)
+	if !m.Loading || cmd == nil {
+		t.Fatalf("expected Loading=true and a non-nil command")
+	}
+	msg := cmd()
+	next2, _ := m.Update(msg)
+	m = next2.(Model)
+
+	if m.Response == nil || m.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Response)
+	}
+	if gotMethod != "POST" || gotPath != "/widgets" || gotBody != `{"ok":true}` {
+		t.Errorf("expected POST /widgets with the typed body, got method=%q path=%q body=%q", gotMethod, gotPath, gotBody)
+	}
+}
+
+// TestSavedRequestQuickExecuteSendsRealHTTPRequest covers the other 0%
+// execute path found the same way: browse-mode 'e' on a saved request.
+func TestSavedRequestQuickExecuteSendsRealHTTPRequest(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotHeader = r.Header.Get("X-Api-Key")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := modelWithStore(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), m.Store)
+
+	m = step(m, "m", "p")
+	m = typeText(m, "/gadgets")
+	m = step(m, "enter") // commit path
+	// 'k' at the default PARAMETERS focus (row 0) moves up into HEADERS —
+	// a header param can now only be created there, matching
+	// HeadersSection.tsx (see TestManualCycleParamType's doc comment).
+	m = step(m, "k", "i")
+	m = typeText(m, "X-Api-Key")
+	m = step(m, "tab")
+	m = typeText(m, "secret")
+	m = step(m, "enter") // commit the header
+	// Top-level bindings like 's' don't fire while HeadersFocused (matches
+	// useManualPanelKeyboard.ts's `if (headersFocused) return;`) — exit
+	// headers focus first.
+	m = step(m, "esc")
+	m = step(m, "s")
+	m = typeText(m, "Gadget Request")
+	m = step(m, "enter", "enter") // name confirm, default tag, save
+
+	// A freshly created tag starts collapsed (matches TS) — expand it so
+	// the saved-request row is reachable, same as saveOneRequest does.
+	if !m.ExpandedTags["default"] {
+		m.toggleTag("default")
+	}
+
+	item := findSavedRequestItem(m)
+	if item == nil {
+		t.Fatalf("setup: expected a saved request in the flat list")
+	}
+	m.LeftIndex = indexOf(m.FlatList, item)
+	m = step(m, "l")
+
+	next, cmd := m.Update(key("e"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatalf("expected a non-nil execute command")
+	}
+	msg := cmd()
+	next2, _ := m.Update(msg)
+	m = next2.(Model)
+
+	if m.Response == nil || m.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Response)
+	}
+	if gotMethod != "GET" || gotPath != "/gadgets" || gotHeader != "secret" {
+		t.Errorf("expected GET /gadgets with X-Api-Key header, got method=%q path=%q header=%q", gotMethod, gotPath, gotHeader)
 	}
 }
 
@@ -292,7 +506,7 @@ func TestManualViewDoesNotOverflowTerminalHeight(t *testing.T) {
 	if m.Manual.Method != "POST" {
 		t.Fatalf("setup: expected method POST, got %q", m.Manual.Method)
 	}
-	m = step(m, "tab", "tab", "i") // focus params -> body -> start editing
+	m = step(m, "j", "i") // 'j' at the empty last param row focuses BODY
 	m = typeText(m, `{"a":1}`)
 	m = step(m, "esc")
 
@@ -372,5 +586,57 @@ func TestDeleteCustomTagRequiresConfirmation(t *testing.T) {
 	m = step(m, "D", "y")
 	if m.isCustomTag("mytag") {
 		t.Errorf("expected tag deleted after 'y'")
+	}
+}
+
+// TestSaveDialogAndRenameTagOverlaysRenderViaFullView is a coverage-gap
+// fix: renderSaveDialogOverlay and renderRenameTagOverlay are only ever
+// invoked from View()'s mode switch, and no existing test called View()
+// while either mode was active — both had 0% coverage despite the app
+// wiring them in correctly. Found via `go test -cover`.
+func TestSaveDialogAndRenameTagOverlaysRenderViaFullView(t *testing.T) {
+	m := modelWithStore(t)
+	m = step(m, "m", "p")
+	m = typeText(m, "/x")
+	m = step(m, "enter", "s")
+	out := m.View()
+	if !strings.Contains(out, "SAVE REQUEST") {
+		t.Errorf("expected the save dialog to render via View(), got:\n%s", out)
+	}
+
+	m2 := modelWithStore(t)
+	if err := m2.Store.AddCustomTag(storage.CustomTag{Name: "mytag"}); err != nil {
+		t.Fatal(err)
+	}
+	m2 = m2.refreshSavedRequests()
+	idx := -1
+	for i, it := range m2.FlatList {
+		if it.Type == ItemTag && it.TagName == "mytag" {
+			idx = i
+		}
+	}
+	m2.LeftIndex = idx
+	m2 = step(m2, "R")
+	out2 := m2.View()
+	if !strings.Contains(out2, "RENAME TAG") {
+		t.Errorf("expected the rename-tag overlay to render via View(), got:\n%s", out2)
+	}
+}
+
+// TestManualPanelRendersCustomParamRowsViaFullView is a coverage-gap fix
+// for renderCustomParamRow (manual.go) — every existing param test drove
+// state transitions directly and asserted on m.Manual.Params, never called
+// View()/renderManualPanel with a saved param present.
+func TestManualPanelRendersCustomParamRowsViaFullView(t *testing.T) {
+	m := modelWithStore(t)
+	m = step(m, "m", "i")
+	m = typeText(m, "X-Test")
+	m = step(m, "tab")
+	m = typeText(m, "value1")
+	m = step(m, "enter")
+
+	out := m.View()
+	if !strings.Contains(out, "X-Test") || !strings.Contains(out, "value1") {
+		t.Errorf("expected the custom param row to render via View(), got:\n%s", out)
 	}
 }

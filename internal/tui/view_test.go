@@ -31,7 +31,7 @@ func TestViewShowsEndpointDetailsWhenSelected(t *testing.T) {
 	m := New(loadTestSpec(t), "")
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = next.(Model)
-	m = step(m, "j", "l") // select first endpoint row, focus right panel
+	m = step(m, "enter", "j", "l") // expand first tag, select its first endpoint, focus right panel
 
 	out := m.View()
 	item := m.selectedItem()

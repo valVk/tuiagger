@@ -47,6 +47,17 @@ func renderButtons(buttons []button) string {
 	return strings.Join(parts, " ")
 }
 
+// panelBorderStyle matches every focusable Box in the TS app
+// (LeftPanel/RightPanel/ManualRequestPanel): `borderStyle={isActive ? 'bold'
+// : 'single'} borderColor={isActive ? 'cyan' : 'gray'}` — the active state
+// changes the border's *weight* (thick line chars), not just its color.
+func panelBorderStyle(active bool) (lipgloss.Border, lipgloss.Color) {
+	if active {
+		return lipgloss.ThickBorder(), activeBorderColor
+	}
+	return lipgloss.NormalBorder(), inactiveBorderColor
+}
+
 func (m Model) View() string {
 	if m.Quitting {
 		return ""
@@ -71,7 +82,10 @@ func (m Model) View() string {
 		}, "\n"))
 	}
 
-	contentHeight := max(m.Height-6, 10)
+	// Header and footer are each full 3-row boxes (border top + content +
+	// border bottom, matching Header.tsx/StatusBar.tsx's default 4-sided
+	// Ink Box), plus the panel row's own top+bottom border — 3+3+2 = 8.
+	contentHeight := max(m.Height-8, 10)
 	leftWidthPct := 30
 	if m.LeftExpanded {
 		leftWidthPct = 50
@@ -126,17 +140,15 @@ func (m Model) renderHeader() string {
 		right += dimStyle.Render("server: ") + cyanStyle.Render(m.Spec.Spec.Servers[m.SelectedServer].URL)
 	}
 
+	// Header.tsx's Box has a default (4-sided) border, not just a bottom
+	// rule — matches every other focusable/framed Box in the TS app.
 	style := lipgloss.NewStyle().
 		Width(m.Width-2).
 		Padding(0, 1).
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderBottom(true).
-		BorderTop(false).
-		BorderLeft(false).
-		BorderRight(false).
 		BorderForeground(inactiveBorderColor)
 
-	gap := max(m.Width-2-lipgloss.Width(left)-lipgloss.Width(right)-2, 1)
+	gap := max(m.Width-4-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return style.Render(left + strings.Repeat(" ", gap) + right)
 }
 
@@ -150,9 +162,12 @@ func (m Model) renderStatusBar() string {
 	var dynamicHints []hint
 	switch {
 	case m.Mode == ModeManual:
+		// Matches StatusBar.tsx's manual-mode hints, minus its stale 'a:add
+		// param' entry — no 'a' key exists in either app (help.go dropped
+		// the same dead hint earlier this session; see HANDOFF.md).
 		dynamicHints = []hint{
-			{"Tab", "section"}, {"i", "edit"}, {"Esc", "cancel"},
-			{"e", "execute"}, {"m", "method"}, {"p", "path"}, {"s", "save"},
+			{"p", "path"}, {"m", "method"}, {"e", "execute"},
+			{"s", "save"}, {"d", "delete"}, {"Esc", "cancel"},
 		}
 	case m.Mode == ModeRenameTag:
 		dynamicHints = []hint{{"Enter", "save"}, {"Esc", "cancel"}}
@@ -173,38 +188,49 @@ func (m Model) renderStatusBar() string {
 
 	position := fmt.Sprintf("%d/%d", m.safeLeftIndex()+1, len(m.FlatList))
 
+	// StatusBar.tsx's Box also has a default (4-sided) border, and always
+	// appends a "{cols}x{rows}" size indicator after the position.
 	style := lipgloss.NewStyle().
 		Width(m.Width-2).
 		Padding(0, 1).
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderTop(true).
-		BorderBottom(false).
-		BorderLeft(false).
-		BorderRight(false).
 		BorderForeground(inactiveBorderColor)
 
 	left := renderHints(staticHints)
-	right := renderHints(dynamicHints) + dimStyle.Render("  "+position)
-	gap := max(m.Width-2-lipgloss.Width(left)-lipgloss.Width(right)-2, 1)
+	right := renderHints(dynamicHints) + dimStyle.Render(fmt.Sprintf("  %s  %dx%d", position, m.Width, m.Height))
+	gap := max(m.Width-4-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return style.Render(left + strings.Repeat(" ", gap) + right)
 }
 
 func (m Model) renderLeftPanel(height, width int) string {
 	active := m.ActivePanel == PanelLeft
-	borderColor := inactiveBorderColor
+	borderStyle, borderColor := panelBorderStyle(active)
+
+	// boxInner is the box's full interior width (border only, no padding);
+	// inner further subtracts the 1-space margin Padding(0,1) adds — the
+	// budget most row renderers below actually receive. The title's rule
+	// line is built to span boxInner exactly (edge-to-edge, no margin),
+	// matching LeftPanel.tsx's border-bottom Box, which spans full-width
+	// while the title/rows above and below it each carry their own
+	// paddingX={1} — one flat Padding() on this whole box can't reproduce
+	// that (it pads every line uniformly), so the title/rule pair is
+	// hand-built here instead of flowing through the outer Style's Padding.
+	boxInner := max(width-2, 1)
+	inner := max(width-4, 1)
+
+	suffix := ""
 	if active {
-		borderColor = activeBorderColor
+		suffix = dimStyle.Render("(i)")
 	}
-
-	title := boldStyle.Render("ENDPOINTS")
+	titleText := boldStyle.Render("ENDPOINTS")
 	if m.Spec != nil {
-		title = boldStyle.Render(truncate(m.Spec.Spec.Info.Title, width-2))
-		if active {
-			title += dimStyle.Render(" (i)")
-		}
+		titleText = boldStyle.Render(truncate(m.Spec.Spec.Info.Title, inner))
 	}
+	gap := max(inner-lipgloss.Width(titleText)-lipgloss.Width(suffix), 0)
+	titleLine := " " + titleText + strings.Repeat(" ", gap) + suffix + " "
+	titleRule := dimStyle.Render(strings.Repeat("─", boxInner))
 
-	visibleHeight := max(height-4, 1)
+	visibleHeight := max(height-5, 1)
 	selected := m.safeLeftIndex()
 	startIndex := 0
 	if len(m.FlatList) > visibleHeight {
@@ -222,7 +248,7 @@ func (m Model) renderLeftPanel(height, width int) string {
 
 	var lines []string
 	for i := startIndex; i < end; i++ {
-		lines = append(lines, m.renderListRow(m.FlatList[i], i == selected, width-2))
+		lines = append(lines, m.renderListRow(m.FlatList[i], i == selected, inner))
 	}
 	for len(lines) < visibleHeight {
 		lines = append(lines, "")
@@ -233,13 +259,15 @@ func (m Model) renderLeftPanel(height, width int) string {
 		footer = dimStyle.Render(fmt.Sprintf("%d/%d", selected+1, len(m.FlatList)))
 	}
 
-	content := title + "\n" + strings.Join(lines, "\n") + "\n" + footer
+	rowsBlock := lipgloss.NewStyle().Width(boxInner).Padding(0, 1).
+		Render(strings.Join(lines, "\n") + "\n" + footer)
+
+	content := titleLine + "\n" + titleRule + "\n" + rowsBlock
 
 	return lipgloss.NewStyle().
-		Width(width).
+		Width(boxInner).
 		Height(height).
-		Padding(0, 1).
-		BorderStyle(lipgloss.NormalBorder()).
+		BorderStyle(borderStyle).
 		BorderForeground(borderColor).
 		Render(content)
 }
@@ -291,10 +319,13 @@ func (m Model) renderListRow(item FlatListItem, selected bool, width int) string
 
 func (m Model) renderRightPanel(height, width int) string {
 	active := m.ActivePanel == PanelRight
-	borderColor := inactiveBorderColor
-	if active {
-		borderColor = activeBorderColor
-	}
+	borderStyle, borderColor := panelBorderStyle(active)
+
+	// Available columns inside the box: width minus the border (1 each
+	// side) minus Padding(0,1) (1 each side) — Width() below already
+	// counts padding internally (lipgloss), so only the border needs
+	// subtracting from the outer width passed in.
+	inner := max(width-4, 1)
 
 	var lines []string
 	// cursorLine, when set (try-it-out only), drives an auto-scroll-into-
@@ -308,11 +339,11 @@ func (m Model) renderRightPanel(height, width int) string {
 	case item == nil:
 		lines = []string{dimStyle.Render("Select an endpoint from the left panel (j/k to navigate)")}
 	case item.Type == ItemTag:
-		lines = m.renderTagLines(item.TagName, width-2)
+		lines = m.renderTagLines(item.TagName, inner)
 	case item.Type == ItemEndpoint && m.Mode == ModeTryIt:
-		lines, cursorLine = m.renderTryItLines(item.Endpoint, width-2)
+		lines, cursorLine = m.renderTryItLines(item.Endpoint, inner)
 	case item.Type == ItemEndpoint:
-		lines = m.renderEndpointLines(item.Endpoint, active, width-2)
+		lines = m.renderEndpointLines(item.Endpoint, active, inner)
 	}
 
 	visibleHeight := max(height-2, 1)
@@ -327,16 +358,20 @@ func (m Model) renderRightPanel(height, width int) string {
 	}
 
 	return lipgloss.NewStyle().
-		Width(width).
+		Width(width-2).
 		Height(height).
 		Padding(0, 1).
-		BorderStyle(lipgloss.NormalBorder()).
+		BorderStyle(borderStyle).
 		BorderForeground(borderColor).
 		Render(strings.Join(visible, "\n"))
 }
 
 func (m Model) renderTagLines(tagName string, width int) []string {
-	lines := []string{boldStyle.Render(tagName), dimStyle.Render("Enter: expand/collapse"), ""}
+	desc := " — Enter: expand/collapse"
+	if m.isCustomTag(tagName) {
+		desc += "  R: rename  D: delete"
+	}
+	lines := []string{boldStyle.Render(tagName), dimStyle.Render(desc), ""}
 	for _, ep := range m.EndpointsByTag[tagName] {
 		methodStyle := lipgloss.NewStyle().Foreground(MethodColor(string(ep.Method))).Bold(true)
 		lines = append(lines, methodStyle.Render(padRight(strings.ToUpper(string(ep.Method)), 7))+truncate(ep.Path, max(width-8, 4)))
@@ -349,20 +384,24 @@ func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, active bool, widt
 	var lines []string
 
 	lines = append(lines, MethodBadge(string(ep.Method))+" "+boldStyle.Render(ep.Path))
-	lines = append(lines, "")
+	lines = append(lines, dimStyle.Render(strings.Repeat("─", width)))
 
-	// Rendered regardless of which panel is focused (not gated on `active`)
-	// so toggling h/l doesn't make the right panel's content jump as this
-	// banner appears/disappears.
+	// No blank line before this banner — RightPanel.tsx's Box has no
+	// marginTop, sitting directly under the heading's border-bottom (same
+	// fix as the try-it-out button row, see renderTryItLines).
 	saved := ""
 	if m.Store != nil {
 		if o := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); o != nil {
-			saved = yellowStyle.Render("  *saved params")
+			saved = yellowStyle.Render(" *saved params")
 		}
 	}
-	lines = append(lines, lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(
-		renderButtons([]button{{"Try it out (t)", cyanStyle}, {"Quick execute (e)", greenBoldStyle}})+saved,
-	), "")
+	// Matches RightPanel.tsx's hand-composed banner exactly — brackets
+	// touch directly ("][", no gap between the two buttons, unlike every
+	// other button row in the app which goes through renderButtons' " "
+	// join) and "*saved params" sits inside the second bracket.
+	banner := dimStyle.Render("[ ") + cyanStyle.Render("Try it out (t)") + dimStyle.Render(" ][ ") +
+		greenBoldStyle.Render("Quick execute (e)") + saved + dimStyle.Render(" ]")
+	lines = append(lines, lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(banner))
 
 	if op.Summary != "" {
 		lines = append(lines, boldStyle.Render(op.Summary))
@@ -377,17 +416,39 @@ func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, active bool, widt
 	if len(op.Parameters) > 0 {
 		lines = append(lines, "", boldStyle.Render("PARAMETERS"))
 		lines = append(lines, paramTableHeader())
+		lines = append(lines, dimStyle.Render(strings.Repeat("─", width)))
 		for _, p := range sortedParameters(op.Parameters) {
 			lines = append(lines, renderParamRow(paramRowState{param: p}, width)...)
 		}
 	}
 
 	if op.RequestBody != nil {
-		lines = append(lines, "", boldStyle.Render("BODY")+" "+dimStyle.Render(contentTypesOf(op.RequestBody.Content)))
-		schema := firstSchema(op.RequestBody.Content)
-		if schema != nil {
-			for l := range strings.SplitSeq(openapi.FormatSchema(schema, 0), "\n") {
-				lines = append(lines, dimStyle.Render(l))
+		heading := boldStyle.Render("BODY") + " " + dimStyle.Render(contentTypesOf(op.RequestBody.Content))
+		if op.RequestBody.Required {
+			heading += lipgloss.NewStyle().Foreground(color5xx).Render(" *")
+		}
+		lines = append(lines, "", heading)
+		// Matches RightPanel.tsx's non-try-it BODY block: a saved override's
+		// actual body (green, 1-space indent) takes priority over the plain
+		// schema shape (dim) — a leftover try-it-out session's body is
+		// visible from browse mode too, not just while try-it is open.
+		savedBody := ""
+		if m.Store != nil {
+			if o := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); o != nil {
+				savedBody = o.Body
+			}
+		}
+		bodyStyle := lipgloss.NewStyle().Foreground(color2xx)
+		switch {
+		case savedBody != "":
+			for l := range strings.SplitSeq(savedBody, "\n") {
+				lines = append(lines, " "+bodyStyle.Render(l))
+			}
+		default:
+			if schema := firstSchema(op.RequestBody.Content); schema != nil {
+				for l := range strings.SplitSeq(openapi.FormatSchema(schema, 0), "\n") {
+					lines = append(lines, dimStyle.Render(l))
+				}
 			}
 		}
 	}
@@ -402,7 +463,13 @@ const (
 	paramCursorWidth = 3
 	paramNameWidth   = 25
 	paramValueWidth  = 25
-	paramTypeWidth   = 12
+	// 16 rather than TS's 12: TS stacks "in" above "type" on two lines so
+	// a 12-wide box never runs out of room; this port combines them on one
+	// line ("in:type") to avoid doubling every row's height (see
+	// renderParamRow's doc comment), so the column needs enough width for
+	// the longest realistic combination ("header:integer", 14 chars) plus
+	// a visible gap before DESCRIPTION.
+	paramTypeWidth = 16
 )
 
 // paramTableHeader matches ParametersSection.tsx's column header row (a
@@ -436,14 +503,24 @@ type paramRowState struct {
 func renderParamRow(s paramRowState, width int) []string {
 	p := s.param
 
-	cursor := "  "
+	// Cursor cell is padRight'd to paramCursorWidth (3), matching
+	// SpecParamRow.tsx's `<Box width={3}>{'> '|'* '|'  '}</Box>` — the
+	// literal 2-char marker plus Ink's own auto-pad to the box width.
+	cursor := strings.Repeat(" ", paramCursorWidth)
 	switch {
 	case s.selected:
-		cursor = cyanStyle.Render("> ")
+		cursor = cyanStyle.Render(padRight("> ", paramCursorWidth))
 	case p.Required:
-		cursor = lipgloss.NewStyle().Foreground(color5xx).Render("* ")
+		cursor = lipgloss.NewStyle().Foreground(color5xx).Render(padRight("* ", paramCursorWidth))
 	}
 
+	// Every cell below pads its PLAIN text to the column width first, then
+	// styles the padded result — not the other way around. Styling first
+	// and padding second (the original approach) measures the ANSI-escaped
+	// string's byte length, which is always >= the target width, so
+	// padRight's len(s)>=width early-return fires and adds no real padding
+	// at all — the same class of bug fixed once already in help.go's
+	// renderHelpLine ("measure before you style, not after").
 	name := p.Name
 	nameStyle := lipgloss.NewStyle()
 	switch {
@@ -452,7 +529,7 @@ func renderParamRow(s paramRowState, width int) []string {
 	case s.disabled:
 		nameStyle = lipgloss.NewStyle().Foreground(inactiveBorderColor)
 	}
-	nameCell := padRight(nameStyle.Strikethrough(s.disabled).Render(truncateTS(name, paramNameWidth)), paramNameWidth)
+	nameCell := nameStyle.Strikethrough(s.disabled).Render(padRight(truncateTS(name, paramNameWidth), paramNameWidth))
 
 	enumOpts := enumValues(p)
 	placeholder := paramPlaceholder(p)
@@ -464,7 +541,9 @@ func renderParamRow(s paramRowState, width int) []string {
 		if current == "" {
 			current = enumOpts[0]
 		}
-		valueCell = padRight(dimStyle.Render("< ")+cyanStyle.Render(current)+dimStyle.Render(" >"), paramValueWidth)
+		plain := "< " + current + " >"
+		pad := strings.Repeat(" ", max(paramValueWidth-len(plain), 0))
+		valueCell = dimStyle.Render("< ") + cyanStyle.Render(current) + dimStyle.Render(" >") + pad
 	case s.editing && !s.disabled:
 		valueCell = padRight(truncateTS(s.editingView, paramValueWidth), paramValueWidth)
 	default:
@@ -482,7 +561,7 @@ func renderParamRow(s paramRowState, width int) []string {
 		if display == "" {
 			display = "-"
 		}
-		valueCell = padRight(valueStyle.Render(truncateTS(display, paramValueWidth)), paramValueWidth)
+		valueCell = valueStyle.Render(padRight(truncateTS(display, paramValueWidth), paramValueWidth))
 	}
 
 	typeStr := "string"
@@ -493,7 +572,10 @@ func renderParamRow(s paramRowState, width int) []string {
 	if s.disabled {
 		typeStyle = lipgloss.NewStyle().Foreground(inactiveBorderColor)
 	}
-	typeCell := padRight(dimStyle.Render(p.In+":")+typeStyle.Render(typeStr), paramTypeWidth)
+	inPrefix := p.In + ":"
+	typePlain := padRight(truncateTS(inPrefix+typeStr, paramTypeWidth), paramTypeWidth)
+	prefixLen := min(len(inPrefix), len(typePlain))
+	typeCell := dimStyle.Render(typePlain[:prefixLen]) + typeStyle.Render(typePlain[prefixLen:])
 
 	descWidth := max(width-paramCursorWidth-paramNameWidth-paramValueWidth-paramTypeWidth, 4)
 	desc := dimStyle.Render(truncate(p.Description, descWidth))
@@ -585,11 +667,15 @@ func renderResponseTabs(op *openapi.Operation, activeTab int, active bool) []str
 	}
 
 	resp := byCode[codes[safeTab]]
-	lines := []string{"", heading, tabLine.String(), dimStyle.Render(resp.Description)}
+	desc := resp.Description
+	if len(resp.Content) > 0 {
+		desc += " (" + contentTypesOf(resp.Content) + ")"
+	}
+	lines := []string{"", heading, tabLine.String(), " " + dimStyle.Render(desc)}
 	schema := firstSchema(resp.Content)
 	if schema != nil {
 		for l := range strings.SplitSeq(openapi.FormatSchema(schema, 0), "\n") {
-			lines = append(lines, dimStyle.Render(l))
+			lines = append(lines, " "+dimStyle.Render(l))
 		}
 	}
 	return lines

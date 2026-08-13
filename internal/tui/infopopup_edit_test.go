@@ -182,6 +182,39 @@ func TestEnvironmentVariableAddEditDelete(t *testing.T) {
 	}
 }
 
+// TestEnvironmentVarTableRendersViaFullView is a coverage-gap fix:
+// renderEnvVarTable is only reached from View() when ShowInfo, on the
+// Environments section, in edit view — no existing test called View() in
+// that exact state, so it had 0% coverage despite being fully wired.
+func TestEnvironmentVarTableRendersViaFullView(t *testing.T) {
+	m := modelWithStore(t)
+	if err := m.Store.AddEnvironment("dev"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Store.SetEnvironmentVariable(0, "API_KEY", "topsecret"); err != nil {
+		t.Fatal(err)
+	}
+	m = gotoInfoSection(m, infoEnvironments)
+	m = step(m, "e") // enter variable-edit view
+
+	out := m.View()
+	if !strings.Contains(out, "API_KEY") || !strings.Contains(out, "topsecret") {
+		t.Errorf("expected the variable table to render via View(), got:\n%s", out)
+	}
+	if !strings.Contains(out, "Variables for") {
+		t.Errorf("expected the 'Variables for <env>' heading, got:\n%s", out)
+	}
+}
+
+func TestDisplayOr(t *testing.T) {
+	if got := displayOr("value", "fallback"); got != "value" {
+		t.Errorf("expected non-empty value preserved, got %q", got)
+	}
+	if got := displayOr("", "fallback"); got != "fallback" {
+		t.Errorf("expected fallback for empty string, got %q", got)
+	}
+}
+
 func TestQuitGuardedWhileEditingAuthOrEnvText(t *testing.T) {
 	m := modelWithStore(t)
 	names := m.authSchemeNames()

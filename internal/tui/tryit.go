@@ -103,20 +103,44 @@ func applicationJSONSchema(content map[string]openapi.MediaType) *openapi.Schema
 // App.tsx's Esc handler — TS saves on Esc exit, not just on execute, so
 // scaffolding or hand-editing a body and then backing out without pressing
 // 'e' doesn't lose the work.
+//
+// Deliberate divergence from TS, not a port of it: TS's Esc handler calls
+// saveOverride() unconditionally, even when every field is empty — which
+// resurrects an empty-but-present override (and its "*saved params"/"~"
+// indicators) right after 'r' (reset) clears everything and the user exits
+// normally afterward, making a reset look like it didn't take. Deleting any
+// existing override instead of writing an empty one when there's nothing
+// left to save closes that gap without changing the "save on exit" behavior
+// for every other case (an untouched write-method endpoint's auto-scaffolded
+// Body is never empty, so it still gets saved as before).
 func (m Model) exitTryIt() Model {
 	if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint && m.Store != nil {
 		ep := item.Endpoint
-		m.Store.SaveEndpointOverride(string(ep.Method), ep.Path, storage.EndpointOverride{
+		override := storage.EndpointOverride{
 			Params:         m.TryIt.ParamValues,
 			CustomParams:   m.TryIt.CustomParams,
 			DisabledParams: disabledSlice(m.TryIt.DisabledParams),
 			Body:           m.TryIt.Body,
 			OverridePath:   m.TryIt.OverridePath,
 			OverrideMethod: m.TryIt.OverrideMethod,
-		})
+		}
+		if isEmptyOverride(override) {
+			m.Store.DeleteEndpointOverride(string(ep.Method), ep.Path)
+		} else {
+			m.Store.SaveEndpointOverride(string(ep.Method), ep.Path, override)
+		}
 	}
 	m.Mode = ModeBrowse
 	return m
+}
+
+// isEmptyOverride reports whether an override has nothing worth persisting
+// — every field at its zero value. See exitTryIt's doc comment for why this
+// matters (a reset followed by a normal exit must not resurrect an
+// empty-but-present override).
+func isEmptyOverride(o storage.EndpointOverride) bool {
+	return len(o.Params) == 0 && len(o.CustomParams) == 0 && len(o.DisabledParams) == 0 &&
+		o.Body == "" && o.OverridePath == "" && o.OverrideMethod == ""
 }
 
 // tryItTotalRows matches ParametersSection.tsx's rows array: required specs,
@@ -129,6 +153,32 @@ func tryItTotalRows(params []openapi.Parameter, custom []storage.CustomParameter
 	return len(params) + len(custom) + 1
 }
 
+// splitCustomParams separates HeadersSection.tsx's header-typed entries from
+// everything ParametersSection.tsx shows (query/path) — same underlying
+// list, filtered into two independent views, matching TS's
+// nonHeaderParams/headerParams split.
+func splitCustomParams(all []storage.CustomParameter) (headers, others []storage.CustomParameter) {
+	for _, p := range all {
+		if p.In == "header" {
+			headers = append(headers, p)
+		} else {
+			others = append(others, p)
+		}
+	}
+	return headers, others
+}
+
+// mergeCustomParams recombines a modified headers or non-header slice with
+// the untouched other group, matching TS's
+// `[...nonHeaderParams, ...updated]` / `[...updated, ...headerParams]`
+// recombination on every HeadersSection/ParametersSection change.
+func mergeCustomParams(headers, others []storage.CustomParameter) []storage.CustomParameter {
+	merged := make([]storage.CustomParameter, 0, len(headers)+len(others))
+	merged = append(merged, headers...)
+	merged = append(merged, others...)
+	return merged
+}
+
 func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	item := m.selectedItem()
@@ -137,7 +187,7 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	ep := item.Endpoint
 	params := sortedParameters(ep.Operation.Parameters)
-	custom := m.TryIt.CustomParams
+	headerParams, custom := splitCustomParams(m.TryIt.CustomParams)
 	totalRows := tryItTotalRows(params, custom)
 
 	if m.TryIt.ShowResetConfirm {
@@ -163,8 +213,16 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBodyFocusedKey(msg)
 	}
 
+	if m.TryIt.HeaderEditing {
+		return m.handleHeaderEditKey(msg, headerParams, custom)
+	}
+
+	if m.TryIt.HeadersFocused {
+		return m.handleHeadersFocusedKey(msg, headerParams, custom)
+	}
+
 	if m.TryIt.ParamEditing {
-		return m.handleParamEditKey(msg, params)
+		return m.handleParamEditKey(msg, params, headerParams, custom)
 	}
 
 	// Response-viewer keys (visual-select/yank/scroll on a response from a
@@ -225,10 +283,14 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		if m.TryIt.ParamCursor > 0 {
 			m.TryIt.ParamCursor--
+		} else {
+			// Matches ParametersSection.tsx's onTabBack: 'k' at the first
+			// PARAMETERS row moves focus up into HEADERS.
+			m.TryIt.HeadersFocused = true
 		}
 		return m, nil
 	case "i":
-		return m.enterParamEdit(params), nil
+		return m.enterParamEdit(params, custom), nil
 	case "d":
 		if m.TryIt.ParamCursor < len(params) {
 			name := params[m.TryIt.ParamCursor].Name
@@ -242,8 +304,9 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "x":
 		if m.TryIt.ParamCursor >= len(params) && m.TryIt.ParamCursor < len(params)+len(custom) {
 			idx := m.TryIt.ParamCursor - len(params)
-			m.TryIt.CustomParams = append(custom[:idx:idx], custom[idx+1:]...)
-			if m.TryIt.ParamCursor > 0 && m.TryIt.ParamCursor >= tryItTotalRows(params, m.TryIt.CustomParams) {
+			custom = append(custom[:idx:idx], custom[idx+1:]...)
+			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
+			if m.TryIt.ParamCursor > 0 && m.TryIt.ParamCursor >= tryItTotalRows(params, custom) {
 				m.TryIt.ParamCursor--
 			}
 		}
@@ -251,7 +314,8 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		if m.TryIt.ParamCursor >= len(params) && m.TryIt.ParamCursor < len(params)+len(custom) {
 			idx := m.TryIt.ParamCursor - len(params)
-			m.TryIt.CustomParams[idx].In = cycleQueryPath(m.TryIt.CustomParams[idx].In)
+			custom[idx].In = cycleQueryPath(custom[idx].In)
+			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
 		} else if m.TryIt.ParamCursor == len(params)+len(custom) {
 			m.TryIt.NewParamIn = cycleQueryPath(m.TryIt.NewParamIn)
 		}
@@ -296,7 +360,7 @@ func cycleQueryPath(in string) string {
 // cursor is on: a spec param (single ValueInput, matching SpecParamRow.tsx
 // including enum-cycle-via-arrows), or a custom/add-new row (name+value
 // two-field editor, matching CustomParamRow.tsx/AddNewParamRow.tsx).
-func (m Model) enterParamEdit(params []openapi.Parameter) Model {
+func (m Model) enterParamEdit(params []openapi.Parameter, custom []storage.CustomParameter) Model {
 	cursor := m.TryIt.ParamCursor
 	switch {
 	case cursor < len(params):
@@ -307,8 +371,8 @@ func (m Model) enterParamEdit(params []openapi.Parameter) Model {
 		m.TryIt.ParamEditing = true
 		m.TryIt.ValueInput.SetValue(m.TryIt.ParamValues[p.Name])
 		m.TryIt.ValueInput.Focus()
-	case cursor < len(params)+len(m.TryIt.CustomParams):
-		p := m.TryIt.CustomParams[cursor-len(params)]
+	case cursor < len(params)+len(custom):
+		p := custom[cursor-len(params)]
 		m.TryIt.ParamEditing = true
 		m.TryIt.ParamField = "name"
 		m.TryIt.NameInput.SetValue(p.Name)
@@ -326,12 +390,12 @@ func (m Model) enterParamEdit(params []openapi.Parameter) Model {
 	return m
 }
 
-func (m Model) handleParamEditKey(msg tea.KeyMsg, params []openapi.Parameter) (tea.Model, tea.Cmd) {
+func (m Model) handleParamEditKey(msg tea.KeyMsg, params []openapi.Parameter, headerParams, custom []storage.CustomParameter) (tea.Model, tea.Cmd) {
 	cursor := m.TryIt.ParamCursor
 	if cursor < len(params) {
 		return m.handleSpecParamEditKey(msg, params[cursor])
 	}
-	return m.handleCustomParamEditKey(msg, params, cursor)
+	return m.handleCustomParamEditKey(msg, params, headerParams, custom, cursor)
 }
 
 func (m Model) handleSpecParamEditKey(msg tea.KeyMsg, p openapi.Parameter) (tea.Model, tea.Cmd) {
@@ -363,8 +427,8 @@ func (m Model) handleSpecParamEditKey(msg tea.KeyMsg, p openapi.Parameter) (tea.
 // branch for 'custom'/'addNew' rows: Tab toggles which field is focused,
 // Enter commits (adding a new CustomParameter for the add-new row, or
 // updating the existing one), Esc cancels without saving.
-func (m Model) handleCustomParamEditKey(msg tea.KeyMsg, params []openapi.Parameter, cursor int) (tea.Model, tea.Cmd) {
-	isAddNew := cursor >= len(params)+len(m.TryIt.CustomParams)
+func (m Model) handleCustomParamEditKey(msg tea.KeyMsg, params []openapi.Parameter, headerParams, custom []storage.CustomParameter, cursor int) (tea.Model, tea.Cmd) {
+	isAddNew := cursor >= len(params)+len(custom)
 
 	switch msg.String() {
 	case "esc":
@@ -389,17 +453,19 @@ func (m Model) handleCustomParamEditKey(msg tea.KeyMsg, params []openapi.Paramet
 				if in == "" {
 					in = "query"
 				}
-				m.TryIt.CustomParams = append(m.TryIt.CustomParams, storage.CustomParameter{
+				custom = append(custom, storage.CustomParameter{
 					ID: uuid.NewString(), Name: name, Value: m.TryIt.ValueInput.Value(),
 					In: in, Enabled: true,
 				})
-				m.TryIt.ParamCursor = len(params) + len(m.TryIt.CustomParams) - 1
+				m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
+				m.TryIt.ParamCursor = len(params) + len(custom) - 1
 				m.TryIt.ParamEditing = false
 			}
 		} else {
 			idx := cursor - len(params)
-			m.TryIt.CustomParams[idx].Name = m.TryIt.NameInput.Value()
-			m.TryIt.CustomParams[idx].Value = m.TryIt.ValueInput.Value()
+			custom[idx].Name = m.TryIt.NameInput.Value()
+			custom[idx].Value = m.TryIt.ValueInput.Value()
+			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
 			m.TryIt.ParamEditing = false
 		}
 		return m, nil
@@ -412,6 +478,223 @@ func (m Model) handleCustomParamEditKey(msg tea.KeyMsg, params []openapi.Paramet
 		m.TryIt.ValueInput, cmd = m.TryIt.ValueInput.Update(msg)
 	}
 	return m, cmd
+}
+
+// handleHeadersFocusedKey matches useHeadersNavigation.ts's non-insert-mode
+// branch: j/k move within the HEADERS table (NAME/VALUE rows + one
+// always-present add-new row), overflowing either boundary exits headers
+// focus entirely (TS's onTabOut/onTabBack both just clear headersFocused,
+// landing back on whichever PARAMETERS row was active before).
+func (m Model) handleHeadersFocusedKey(msg tea.KeyMsg, headerParams, custom []storage.CustomParameter) (tea.Model, tea.Cmd) {
+	totalRows := len(headerParams) + 1
+	switch msg.String() {
+	case "j", "down":
+		if m.TryIt.HeaderCursor < totalRows-1 {
+			m.TryIt.HeaderCursor++
+		} else {
+			m.TryIt.HeadersFocused = false
+		}
+		return m, nil
+	case "k", "up":
+		if m.TryIt.HeaderCursor > 0 {
+			m.TryIt.HeaderCursor--
+		} else {
+			m.TryIt.HeadersFocused = false
+		}
+		return m, nil
+	case "tab", "esc":
+		m.TryIt.HeadersFocused = false
+		return m, nil
+	case "i":
+		m.TryIt.HeaderEditing = true
+		m.TryIt.ParamField = "name"
+		if m.TryIt.HeaderCursor < len(headerParams) {
+			p := headerParams[m.TryIt.HeaderCursor]
+			m.TryIt.NameInput.SetValue(p.Name)
+			m.TryIt.ValueInput.SetValue(p.Value)
+		} else {
+			m.TryIt.NameInput.SetValue("")
+			m.TryIt.ValueInput.SetValue("")
+		}
+		m.TryIt.NameInput.Focus()
+		m.TryIt.ValueInput.Blur()
+		return m, nil
+	case "x":
+		if m.TryIt.HeaderCursor < len(headerParams) {
+			idx := m.TryIt.HeaderCursor
+			headerParams = append(headerParams[:idx:idx], headerParams[idx+1:]...)
+			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
+			if m.TryIt.HeaderCursor > len(headerParams) {
+				m.TryIt.HeaderCursor = len(headerParams)
+			}
+		}
+		return m, nil
+	case "d":
+		if m.TryIt.HeaderCursor < len(headerParams) {
+			headerParams[m.TryIt.HeaderCursor].Enabled = !headerParams[m.TryIt.HeaderCursor].Enabled
+			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleHeaderEditKey matches useHeadersNavigation.ts's insertMode branch:
+// Tab toggles name/value focus, Enter commits, Esc cancels — no enum/type
+// cycling, since header values are always plain strings.
+func (m Model) handleHeaderEditKey(msg tea.KeyMsg, headerParams, custom []storage.CustomParameter) (tea.Model, tea.Cmd) {
+	isAddNew := m.TryIt.HeaderCursor >= len(headerParams)
+
+	switch msg.String() {
+	case "esc":
+		m.TryIt.HeaderEditing = false
+		return m, nil
+	case "tab":
+		if m.TryIt.ParamField == "name" {
+			m.TryIt.ParamField = "value"
+			m.TryIt.NameInput.Blur()
+			m.TryIt.ValueInput.Focus()
+		} else {
+			m.TryIt.ParamField = "name"
+			m.TryIt.ValueInput.Blur()
+			m.TryIt.NameInput.Focus()
+		}
+		return m, nil
+	case "enter":
+		if isAddNew {
+			name := strings.TrimSpace(m.TryIt.NameInput.Value())
+			if name != "" {
+				headerParams = append(headerParams, storage.CustomParameter{
+					ID: uuid.NewString(), Name: name, Value: m.TryIt.ValueInput.Value(),
+					In: "header", Enabled: true,
+				})
+				m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
+				m.TryIt.HeaderCursor = len(headerParams) - 1
+				m.TryIt.HeaderEditing = false
+			}
+		} else {
+			idx := m.TryIt.HeaderCursor
+			headerParams[idx].Name = m.TryIt.NameInput.Value()
+			headerParams[idx].Value = m.TryIt.ValueInput.Value()
+			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
+			m.TryIt.HeaderEditing = false
+		}
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	if m.TryIt.ParamField == "name" {
+		m.TryIt.NameInput, cmd = m.TryIt.NameInput.Update(msg)
+	} else {
+		m.TryIt.ValueInput, cmd = m.TryIt.ValueInput.Update(msg)
+	}
+	return m, cmd
+}
+
+const (
+	headerCursorWidth = 3
+	headerNameWidth   = 25
+	headerValueWidth  = 28 // HeadersSection.tsx's own VALUE_WIDTH, distinct from paramValueWidth
+)
+
+// renderHeadersSection matches HeadersSection.tsx: a NAME/VALUE-only table
+// (no TYPE/DESCRIPTION, no enum cycling) for CustomParams entries with
+// In=="header", plus an always-present add-new row. Returns the rendered
+// lines and the line index of the current cursor row (for auto-scroll),
+// matching renderTryItLines's cursorLine convention.
+func renderHeadersSection(headers []storage.CustomParameter, cursor int, focused, editing bool, field string, nameInput, valueInput textinput.Model) ([]string, int) {
+	hint := ""
+	if focused {
+		if editing {
+			hint = " Tab: switch field | Enter: confirm | Esc: cancel"
+		} else {
+			hint = " j/k: move | i: edit | d: toggle | x: del"
+		}
+	}
+	lines := []string{
+		boldStyle.Render("HEADERS") + dimStyle.Render(hint),
+		strings.Repeat(" ", headerCursorWidth) + dimStyle.Bold(true).Render(padRight("NAME", headerNameWidth)+"VALUE"),
+	}
+
+	cursorLine := -1
+	for i, h := range headers {
+		selected := focused && i == cursor
+		isEditingThis := focused && editing && i == cursor
+		if selected {
+			cursorLine = len(lines)
+		}
+		rowCursor := strings.Repeat(" ", headerCursorWidth)
+		if selected {
+			rowCursor = cyanStyle.Render(padRight("> ", headerCursorWidth))
+		}
+		var nameCell, valueCell string
+		if isEditingThis && field == "name" {
+			nameCell = padRight(nameInput.View(), headerNameWidth)
+		} else {
+			nameStyle := lipgloss.NewStyle()
+			if selected {
+				nameStyle = cyanStyle
+			}
+			plain := h.Name
+			if plain == "" {
+				plain = "-"
+			}
+			nameCell = nameStyle.Render(padRight(truncateTS(plain, headerNameWidth), headerNameWidth))
+		}
+		if isEditingThis && field == "value" {
+			valueCell = valueInput.View()
+		} else {
+			plain := h.Value
+			if plain == "" {
+				plain = "-"
+			}
+			valueStyle := lipgloss.NewStyle().Foreground(color2xx)
+			if !h.Enabled {
+				valueStyle = lipgloss.NewStyle().Foreground(inactiveBorderColor)
+			}
+			valueCell = valueStyle.Render(truncateTS(plain, headerValueWidth))
+		}
+		lines = append(lines, rowCursor+nameCell+valueCell)
+	}
+
+	addSelected := focused && cursor == len(headers)
+	isAddingNew := addSelected && editing
+	if addSelected {
+		cursorLine = len(lines)
+	}
+	addCursor := strings.Repeat(" ", headerCursorWidth)
+	if addSelected {
+		addCursor = cyanStyle.Render(padRight("> ", headerCursorWidth))
+	}
+	switch {
+	case isAddingNew:
+		var nameCell, valueCell string
+		if field == "name" {
+			nameCell = padRight(nameInput.View(), headerNameWidth)
+		} else {
+			plain := nameInput.Value()
+			if plain == "" {
+				plain = "-"
+			}
+			nameCell = cyanStyle.Render(padRight(truncateTS(plain, headerNameWidth), headerNameWidth))
+		}
+		if field == "value" {
+			valueCell = valueInput.View()
+		} else {
+			plain := valueInput.Value()
+			if plain == "" {
+				plain = "-"
+			}
+			valueCell = dimStyle.Render(truncateTS(plain, headerValueWidth))
+		}
+		lines = append(lines, addCursor+nameCell+valueCell)
+	case addSelected:
+		lines = append(lines, addCursor+cyanStyle.Render("[ i: add header ]"))
+	default:
+		lines = append(lines, addCursor+dimStyle.Render("[ + ]"))
+	}
+
+	return lines, cursorLine
 }
 
 // renderTryItBodySection matches RightPanel.tsx's isTryItMode BODY box: a
@@ -840,14 +1123,18 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) ([]string
 		}
 		header += dimStyle.Render(" (p)")
 	}
-	lines = append(lines, header, "")
+	// No blank line before or after the button row — RightPanel.tsx renders
+	// it as `marginTop={0}` directly under the heading's border-bottom, and
+	// the summary/description block right after it has no explicit gap
+	// either (its own Box just starts immediately).
+	lines = append(lines, header, dimStyle.Render(strings.Repeat("─", width)))
 
 	buttons := []button{}
 	if methodModified || pathModified {
 		buttons = append(buttons, button{"Reset (r)", yellowStyle})
 	}
 	buttons = append(buttons, button{"Execute (e)", greenBoldStyle}, button{"Cancel (Esc)", dimStyle})
-	lines = append(lines, lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(renderButtons(buttons)), "")
+	lines = append(lines, lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(renderButtons(buttons)))
 
 	if op.Summary != "" {
 		lines = append(lines, boldStyle.Render(op.Summary))
@@ -864,13 +1151,25 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) ([]string
 	// skipped when len(params)==0, which silently dropped both the hints
 	// and any way to add a custom query/path param for such endpoints.
 	params := sortedParameters(op.Parameters)
-	custom := m.TryIt.CustomParams
+	headerParams, custom := splitCustomParams(m.TryIt.CustomParams)
 	widgets := paramEditWidgets{Field: m.TryIt.ParamField, NameInput: m.TryIt.NameInput, ValueInput: m.TryIt.ValueInput, NewParamIn: m.TryIt.NewParamIn}
 
-	lines = append(lines, "", boldStyle.Render("PARAMETERS")+"  "+renderHints([]hint{
-		{"j/k", "move"}, {"i", "edit"}, {"d", "disable"}, {"x", "del"}, {"c", "type"}, {"←/→", "enum"},
-	}))
+	// HeadersSection.tsx renders above ParametersSection, matching TS's
+	// stacked focus order (up from PARAMETERS row 0 enters HEADERS).
+	headersLines, headerCursorLine := renderHeadersSection(headerParams, m.TryIt.HeaderCursor, m.TryIt.HeadersFocused, m.TryIt.HeaderEditing, m.TryIt.ParamField, m.TryIt.NameInput, m.TryIt.ValueInput)
+	lines = append(lines, "")
+	headersStart := len(lines)
+	lines = append(lines, headersLines...)
+	if m.TryIt.HeadersFocused && headerCursorLine >= 0 {
+		cursorLine = headersStart + headerCursorLine
+	}
+
+	// Matches ParametersSection.tsx's hint line exactly: one uniformly-dim
+	// string (not per-key cyan highlighting like renderHints), "toggle" not
+	// "disable", " | "-separated.
+	lines = append(lines, "", boldStyle.Render("PARAMETERS")+dimStyle.Render(" j/k: move | i: edit | d: toggle | x: del | c: type"))
 	lines = append(lines, paramTableHeader())
+	lines = append(lines, dimStyle.Render(strings.Repeat("─", width)))
 	for i, p := range params {
 		selected := i == m.TryIt.ParamCursor
 		editing := selected && m.TryIt.ParamEditing

@@ -159,16 +159,14 @@ func (m Model) handleServersKey(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// authSchemeNames matches InfoPopup.tsx's
+// `Object.entries(spec.components.securitySchemes)`, which iterates in the
+// spec's original declaration order, not alphabetically.
 func (m Model) authSchemeNames() []string {
 	if m.Spec.Spec.Components == nil {
 		return nil
 	}
-	names := make([]string, 0, len(m.Spec.Spec.Components.SecuritySchemes))
-	for name := range m.Spec.Spec.Components.SecuritySchemes {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return m.Spec.Spec.Components.SecuritySchemeOrder
 }
 
 func (m Model) handleAuthKey(key string) (tea.Model, tea.Cmd) {
@@ -411,22 +409,32 @@ func (m Model) renderInfoPopup(height, width int) string {
 	}
 	lines = append(lines, header)
 	if m.Spec.Spec.Info.Description != "" {
-		lines = append(lines, dimStyle.Render(truncate(m.Spec.Spec.Info.Description, width-4)))
+		// InfoPopup.tsx's <Text wrap="truncate"> only truncates each line
+		// that's too WIDE for the terminal — it doesn't collapse the
+		// description to one line. A multi-paragraph OpenAPI description
+		// (common: literal '\n's between paragraphs/link lists) renders as
+		// that many rows in TS, so split on '\n' first, truncate each row
+		// individually, rather than truncating the whole string to one row.
+		for l := range strings.SplitSeq(m.Spec.Spec.Info.Description, "\n") {
+			lines = append(lines, dimStyle.Render(truncate(l, width-4)))
+		}
 	}
 
+	inner := max(width-4, 1)
+
 	lines = append(lines, "")
-	lines = append(lines, m.renderServersSection()...)
+	lines = append(lines, m.renderServersSection(inner)...)
 
 	if m.Spec.Spec.Components != nil && len(m.Spec.Spec.Components.SecuritySchemes) > 0 {
 		lines = append(lines, "")
-		lines = append(lines, m.renderAuthSection()...)
+		lines = append(lines, m.renderAuthSection(inner)...)
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, m.renderEnvironmentsSection()...)
+	lines = append(lines, m.renderEnvironmentsSection(inner)...)
 
 	return lipgloss.NewStyle().
-		Width(width).
+		Width(width-2).
 		Height(height).
 		Padding(0, 1).
 		BorderStyle(lipgloss.DoubleBorder()).
@@ -434,14 +442,14 @@ func (m Model) renderInfoPopup(height, width int) string {
 		Render(strings.Join(lines, "\n"))
 }
 
-func (m Model) renderServersSection() []string {
+func (m Model) renderServersSection(width int) []string {
 	active := m.InfoSection == infoServers
 	title := boldStyle.Render("SERVERS")
 	if active {
 		title = boldStyle.Foreground(activeBorderColor).Render("SERVERS") + "  " +
 			dimStyle.Render("Tab: switch  j/k: move  Enter: select  Esc: close")
 	}
-	lines := []string{title}
+	lines := []string{title, dimStyle.Render(strings.Repeat("─", width))}
 	for i, s := range m.servers() {
 		cursor := "  "
 		lineStyle := lipgloss.NewStyle()
@@ -466,14 +474,14 @@ func (m Model) renderServersSection() []string {
 	return lines
 }
 
-func (m Model) renderAuthSection() []string {
+func (m Model) renderAuthSection(width int) []string {
 	active := m.InfoSection == infoAuth
 	title := boldStyle.Render("AUTH")
 	if active {
 		title = boldStyle.Foreground(activeBorderColor).Render("AUTH") + "  " +
 			dimStyle.Render("Tab: switch  j/k: move  Enter: edit  Esc: close")
 	}
-	lines := []string{title}
+	lines := []string{title, dimStyle.Render(strings.Repeat("─", width))}
 
 	var creds map[string]string
 	if m.Store != nil {
@@ -526,7 +534,7 @@ func authSchemeLabel(scheme openapi.SecurityScheme) string {
 	}
 }
 
-func (m Model) renderEnvironmentsSection() []string {
+func (m Model) renderEnvironmentsSection(width int) []string {
 	active := m.InfoSection == infoEnvironments
 	title := boldStyle.Render("ENVIRONMENTS")
 	if active {
@@ -536,7 +544,7 @@ func (m Model) renderEnvironmentsSection() []string {
 		}
 		title = boldStyle.Foreground(activeBorderColor).Render("ENVIRONMENTS") + "  " + dimStyle.Render(hint)
 	}
-	lines := []string{title}
+	lines := []string{title, dimStyle.Render(strings.Repeat("─", width))}
 
 	if active && m.Env.View == envViewEdit {
 		return append(lines, m.renderEnvVarTable()...)

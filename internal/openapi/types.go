@@ -129,6 +129,11 @@ type Schema struct {
 type Components struct {
 	Schemas         map[string]*Schema
 	SecuritySchemes map[string]SecurityScheme
+	// SecuritySchemeOrder preserves the spec's original declaration order
+	// (a plain Go map has none) — matches InfoPopup.tsx's
+	// `Object.entries(spec.components.securitySchemes)`, which iterates in
+	// the source JS object's insertion order, not alphabetically.
+	SecuritySchemeOrder []string
 }
 
 type SecurityScheme struct {

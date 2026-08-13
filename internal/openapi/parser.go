@@ -290,6 +290,7 @@ func convertComponents(c *v3.Components) *Components {
 				Scheme:       ss.Scheme,
 				BearerFormat: ss.BearerFormat,
 			}
+			out.SecuritySchemeOrder = append(out.SecuritySchemeOrder, name)
 		}
 	}
 	return out

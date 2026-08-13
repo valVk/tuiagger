@@ -59,6 +59,16 @@ type tryItState struct {
 	NameInput    textinput.Model
 	NewParamIn   string // in-progress type ("query"/"path") for the add-new row
 
+	// HeadersFocused/HeaderCursor/HeaderEditing back a second, independent
+	// table above PARAMETERS for CustomParams entries with In=="header" —
+	// matches HeadersSection.tsx, a wholly separate NAME/VALUE-only editor
+	// (no TYPE/DESCRIPTION columns, no enum cycling). Editing state
+	// (NameInput/ValueInput/ParamField) is shared with the PARAMETERS
+	// table since only one of the two can ever be mid-edit at once.
+	HeadersFocused bool
+	HeaderCursor   int
+	HeaderEditing  bool
+
 	EditingPath bool
 	PathInput   textinput.Model
 
@@ -131,20 +141,18 @@ type Model struct {
 	Quitting      bool
 }
 
-// New builds the initial Model with every tag expanded, matching
-// usePanelNavigation.ts's initial state (`useState(() => new Set(allTags))`).
+// New builds the initial Model with every tag collapsed. Deliberate
+// divergence from TS's usePanelNavigation.ts, which starts with every tag
+// expanded (`useState(() => new Set(allTags))`) — a large spec otherwise
+// dumps every endpoint into view on first launch instead of just its tags.
 func New(spec *openapi.ParsedSpec, collectionName string) Model {
 	endpointsByTag := openapi.GetEndpointsByTag(spec.Endpoints)
-	expanded := make(map[string]bool, len(spec.Tags))
-	for _, t := range spec.Tags {
-		expanded[t] = true
-	}
 	m := Model{
 		Spec:           spec,
 		CollectionName: collectionName,
 		AllTags:        spec.Tags,
 		EndpointsByTag: endpointsByTag,
-		ExpandedTags:   expanded,
+		ExpandedTags:   make(map[string]bool, len(spec.Tags)),
 		ActivePanel:    PanelLeft,
 	}
 	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
@@ -270,10 +278,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Loading = false
 		m.Response = msg.response
 		m.Curl = msg.curl
-		m.RightScroll = 0
 		if msg.response != nil {
 			m.Viewer = newResponseViewer(msg.response.Body)
 		}
+		m.RightScroll = m.scrollToResponse()
 		return m, nil
 	case yankExpiredMsg:
 		m.Viewer.Yanked = false
@@ -371,9 +379,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// R/D on a custom tag and E/D on a saved request work regardless of
-	// which panel is active, matching useAppKeyboard.ts's browse-mode
-	// handler (checked ahead of h/l/j/k navigation).
+	// R/D on a custom tag, E/D on a saved request, and 'e' quick-execute all
+	// work regardless of which panel is active, matching
+	// useAppKeyboard.ts's browse-mode handler (checked ahead of h/l/j/k
+	// navigation) — 'e' in particular is bound in a useInput with
+	// isActive: mode === 'browse' only, no panel check, so it must work
+	// from the left panel too, not just after pressing 'l' first.
 	if item := m.selectedItem(); item != nil {
 		switch {
 		case key == "R" && item.Type == ItemTag && m.isCustomTag(item.TagName):
@@ -388,6 +399,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.Store.DeleteSavedRequest(item.SavedRequest.ID)
 			}
 			return m.refreshSavedRequests(), nil
+		case key == "e" && item.Type == ItemEndpoint:
+			cmd := m.quickExecuteCmd(item.Endpoint)
+			m.Loading = true
+			return m, cmd
+		case key == "e" && item.Type == ItemSavedRequest:
+			cmd := m.savedRequestExecuteCmd(item.SavedRequest)
+			m.Loading = true
+			return m, cmd
 		}
 	}
 
@@ -522,6 +541,71 @@ func (m Model) handleLeftPanelKey(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// scrollToResponse computes the right-panel scroll offset that brings the
+// just-arrived response into view, replicating renderRightPanel's own
+// layout math (leftWidth/rightWidth/inner) so Update can decide the target
+// offset without View having any say in state. Deliberate improvement over
+// TS, not a port of it: App.tsx just resets scroll to 0 (top of the
+// endpoint doc) after executing, which doesn't actually reveal the response
+// unless it happens to fit above the fold — found via a user report that a
+// fresh response wasn't visible without manually scrolling down every time.
+// Falls back to 0 for anything this can't compute a real answer for (no
+// endpoint selected, manual builder — see the doc comment on why manual
+// mode isn't covered yet).
+func (m Model) scrollToResponse() int {
+	item := m.selectedItem()
+	if item == nil || item.Type != ItemEndpoint || m.Mode == ModeManual {
+		return 0
+	}
+
+	leftWidthPct := 30
+	if m.LeftExpanded {
+		leftWidthPct = 50
+	}
+	leftWidth := max(m.Width*leftWidthPct/100, 20)
+	rightWidth := max(m.Width-leftWidth-2, 20)
+	inner := max(rightWidth-4, 1)
+
+	var lines []string
+	if m.Mode == ModeTryIt {
+		lines, _ = m.renderTryItLines(item.Endpoint, inner)
+	} else {
+		lines = m.renderEndpointLines(item.Endpoint, m.ActivePanel == PanelRight, inner)
+	}
+	responseLines := m.renderResponseBlock(inner)
+	if len(responseLines) == 0 {
+		return 0
+	}
+	responseStart := max(len(lines)-len(responseLines), 0)
+	// renderResponseBlock always leads with a blank separator line before
+	// the actual "RESPONSE ..." heading (visual spacing from whatever's
+	// above it) — skip past it so the heading itself lands at the top of
+	// the viewport, not one blank row below the top.
+	if responseLines[0] == "" {
+		responseStart++
+	}
+	// Deliberately not scrollToShow: that's minimal-motion "nudge just
+	// enough to bring one line into view" tracking, meant for following a
+	// cursor that moves a row at a time (try-it-out's param rows). Landing
+	// the response's first line at the *bottom* edge of the viewport
+	// technically satisfies "in view" but shows almost none of it — the
+	// user wants the response section itself at the top, like a jump, not
+	// a nudge.
+	//
+	// Also deliberately NOT clamped to max(len(lines)-visibleHeight, 0):
+	// that clamp exists so a plain scroll never leaves dangling blank rows
+	// at the bottom of the viewport, but applied here it pulls the start
+	// backward whenever the response is short (found via a user
+	// screenshot: a short response left several lines of the *preceding*
+	// section's content bleeding in above "RESPONSE ..." instead of the
+	// heading sitting flush under the box's top border). A short response
+	// leaving blank rows at the bottom is the right tradeoff — the heading
+	// must always be the first visible line. renderRightPanel's own
+	// rendering already pads a too-short `visible` slice with blank lines,
+	// so this is safe.
+	return responseStart
+}
+
 func (m Model) handleRightPanelKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "j", "down":
@@ -538,20 +622,6 @@ func (m Model) handleRightPanelKey(key string) (tea.Model, tea.Cmd) {
 			codes := sortedResponseCodes(item.Endpoint)
 			if len(codes) > 0 {
 				m.ResponseTab = (m.ResponseTab + 1) % len(codes)
-			}
-		}
-		return m, nil
-	case "e":
-		if item := m.selectedItem(); item != nil {
-			switch item.Type {
-			case ItemEndpoint:
-				cmd := m.quickExecuteCmd(item.Endpoint)
-				m.Loading = true
-				return m, cmd
-			case ItemSavedRequest:
-				cmd := m.savedRequestExecuteCmd(item.SavedRequest)
-				m.Loading = true
-				return m, cmd
 			}
 		}
 		return m, nil

@@ -167,6 +167,69 @@ func TestCustomTagAddIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestDeleteCustomTagRemovesTagAndReportsMissing(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore("", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddCustomTag(CustomTag{Name: "billing"}); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := s.DeleteCustomTag("billing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Errorf("expected delete of existing tag to report true")
+	}
+	if len(s.LoadSavedRequests().CustomTags) != 0 {
+		t.Errorf("expected tag removed, got %+v", s.LoadSavedRequests().CustomTags)
+	}
+
+	ok, err = s.DeleteCustomTag("nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Errorf("expected delete of missing tag to report false")
+	}
+}
+
+func TestDeleteEndpointOverrideRemovesOverrideAndReportsMissing(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore("", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	override := EndpointOverride{
+		Params:         map[string]string{"id": "42"},
+		CustomParams:   []CustomParameter{},
+		DisabledParams: []string{},
+	}
+	if err := s.SaveEndpointOverride("get", "/pet/{id}", override); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := s.DeleteEndpointOverride("get", "/pet/{id}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Errorf("expected delete of existing override to report true")
+	}
+	if got := s.GetEndpointOverride("GET", "/pet/{id}"); got != nil {
+		t.Errorf("expected override removed, got %+v", got)
+	}
+
+	ok, err = s.DeleteEndpointOverride("get", "/pet/{id}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Errorf("expected delete of missing override to report false")
+	}
+}
+
 func TestRenameCustomTagUpdatesTagAndItsRequests(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewStore("", dir)

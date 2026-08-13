@@ -157,7 +157,7 @@ func TestReloadSetsLoadingAndReturnsCmd(t *testing.T) {
 
 func TestReloadSuccessRebuildsSpecAndReturnsToBrowse(t *testing.T) {
 	m := sizedModel(t)
-	m = step(m, "j", "t") // select an endpoint, enter try-it to prove reload resets it
+	m = step(m, "enter", "j", "t") // expand first tag, select an endpoint, enter try-it to prove reload resets it
 	if m.Mode != ModeTryIt {
 		t.Fatalf("expected try-it mode")
 	}

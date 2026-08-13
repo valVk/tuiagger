@@ -31,6 +31,7 @@ func newSaveDialogState(availableTags []string, editing *storage.SavedRequest) s
 	}
 
 	name := textinput.New()
+	name.Placeholder = "request name"
 	name.Focus()
 	tagIndex := 0
 	if editing != nil {
@@ -43,11 +44,14 @@ func newSaveDialogState(availableTags []string, editing *storage.SavedRequest) s
 		}
 	}
 
+	newTag := textinput.New()
+	newTag.Placeholder = "new tag name"
+
 	return saveDialogState{
 		NameInput:   name,
 		Tags:        tags,
 		TagIndex:    tagIndex,
-		NewTagInput: textinput.New(),
+		NewTagInput: newTag,
 		Focus:       "name",
 	}
 }
@@ -222,7 +226,7 @@ func (m Model) renderSaveDialogOverlay(height, width int) string {
 		if dlg.Focus == "tag" {
 			valStyle = cyanStyle
 		}
-		tagValue = dimStyle.Render("< ") + valStyle.Render(current) + dimStyle.Render(" > new")
+		tagValue = dimStyle.Render("← ") + valStyle.Render(current) + dimStyle.Render(" → new")
 	}
 	tagLine := tagStyle.Render(tagLabel) + tagValue
 

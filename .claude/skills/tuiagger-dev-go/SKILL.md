@@ -74,13 +74,21 @@ mocking.
    as the TS workflow — it's the shared source of truth for both codebases
    until cutover.
 
-## Dependencies are vendored
+## Dependencies are vendored locally, not committed
 
-`vendor/` is committed — Go auto-uses it (no `-mod=vendor` flag needed) as
-long as it stays consistent with `go.mod`/`go.sum`. **After any `go get` or
-manual `go.mod` edit, run `task vendor`** (tidy + vendor) and stage the
-result before building/testing, or the build will fail with a
-vendor-inconsistency error.
+`vendor/` exists on disk (Go auto-uses it — no `-mod=vendor` flag needed —
+as long as it stays consistent with `go.mod`/`go.sum`) but is
+`.gitignore`d, not committed. `go.sum` alone is sufficient for reproducible
+builds; `go build`/`go test` resolve dependencies from the local module
+cache or proxy when `vendor/` is stale or absent. A fresh clone doesn't need
+`vendor/` at all — plain `go build` works. Vendoring here is purely a local
+build-speed/offline convenience, not a reproducibility requirement.
+
+**After any `go get` or manual `go.mod` edit, run `task vendor`** (tidy +
+vendor) locally to keep your own `vendor/` consistent with `go.mod`/`go.sum`
+— otherwise a `-mod=vendor` build (if you ever force one) will fail with a
+vendor-inconsistency error. There's nothing to stage for `vendor/` itself
+since it's gitignored; do still stage `go.mod`/`go.sum`.
 
 ## Verifying changes
 
