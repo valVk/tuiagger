@@ -1,9 +1,6 @@
+bin/
 # Dependencies
-node_modules/
 vendor/
-
-# Build output
-dist/
 
 # Local config
 .twagger/
@@ -20,7 +17,6 @@ Thumbs.db
 
 # Logs
 *.log
-npm-debug.log*
 
 # Environment
 .env

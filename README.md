@@ -2,7 +2,7 @@
 
 > Pronounced **"TOO-ee-agger"** — TUI ("tooey") + agger (from sw**agger**).
 
-A terminal-based UI for viewing and interacting with OpenAPI/Swagger documentation. Navigate endpoints, execute requests, and manage API collections - all without leaving the terminal.
+A terminal-based UI for viewing and interacting with OpenAPI/Swagger documentation. Navigate endpoints, execute requests, and manage API collections — all without leaving the terminal.
 
 <div align="center">
   <picture>
@@ -10,19 +10,18 @@ A terminal-based UI for viewing and interacting with OpenAPI/Swagger documentati
   </picture>
 </div>
 
-
 ## Features
 
-- **Two-panel layout** - scrollable endpoint list on the left, details on the right
-- **Try it out** - execute requests directly from the terminal with live responses
-- **Manual request builder** - create and save custom requests not in the spec
-- **Collections** - store named API specs in `~/.tuiagger/` for quick access
-- **Environments** - named variable sets (`dev`, `staging`, `prod`) with `{{variable}}` interpolation
-- **Faker interpolation** - generate realistic test data with `{{faker.internet.email()}}` syntax
-- **Auth support** - configure Bearer token, Basic auth, or API key in the info panel
-- **Server switching** - select from servers defined in the spec
-- **Visual response selection** - enter visual mode to select and yank response body lines
-- **Curl generation** - every executed request shows its equivalent curl command
+- **Two-panel layout** — scrollable tag/endpoint list on the left, details on the right
+- **Try it out** — execute requests directly from the terminal with live responses, including a HEADERS table separate from query/path PARAMETERS
+- **Manual request builder** — create and save custom requests not in the spec
+- **Collections** — store named API specs in `~/.tuiagger/` for quick access
+- **Environments** — named variable sets (`dev`, `staging`, `prod`) with `{{variable}}` interpolation
+- **Faker interpolation** — generate realistic test data with `{{faker.internet.email()}}` syntax
+- **Auth support** — configure Bearer token, Basic auth, or API key in the info panel
+- **Server switching** — select from servers defined in the spec
+- **Visual response selection** — enter visual mode to select and yank response body lines
+- **Curl generation** — every executed request shows its equivalent curl command in its own colored section, with a dedicated shortcut to yank it to the clipboard
 
 ## Installation
 
@@ -42,12 +41,18 @@ brew untap valVK/tuiagger
 
 ### From source
 
+Requires Go 1.26+.
+
 ```bash
 git clone https://github.com/valVK/tuiagger
 cd tuiagger
-npm install
-npm run build
-npm link        # makes `tuiagger` available globally
+go build -o /usr/local/bin/tuiagger ./cmd/tuiagger
+```
+
+Or, with [Task](https://taskfile.dev) installed:
+
+```bash
+task build   # builds to ./bin/tuiagger
 ```
 
 ## Usage
@@ -64,6 +69,9 @@ tuiagger https://petstore3.swagger.io/api/v3/openapi.json
 
 # List saved collections
 tuiagger --list
+
+# Show version
+tuiagger --version
 ```
 
 ## Collections
@@ -79,11 +87,11 @@ cp openapi.json ~/.tuiagger/MyAPI/
 tuiagger MyAPI
 ```
 
-Saved manual requests and auth/environment config are stored per-collection.
+Saved manual requests, try-it-out overrides, and auth/environment config are stored per-collection as JSON files alongside the spec (writes are atomic — write-to-`.tmp`-then-rename — so a killed process mid-write can't corrupt them).
 
 ## Keyboard Shortcuts
 
-Press `?` inside tuiagger to open the full interactive cheatsheet.
+Press `?` inside tuiagger to open the full interactive cheatsheet — it always reflects exactly what's implemented, so treat it as the definitive reference over this table if the two ever disagree.
 
 ### Global
 
@@ -110,16 +118,20 @@ Press `?` inside tuiagger to open the full interactive cheatsheet.
 | `Enter` | Expand / collapse tag |
 | `g` / `G` | First / last item |
 | `c` / `x` | Collapse / expand all tags |
+| `R` | Rename tag (custom tags only) |
+| `D` | Delete tag, with confirm if non-empty (custom tags only) |
 
 ### Right Panel (browse)
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` | Scroll down / up |
+| `j` / `k` | Scroll content |
 | `g` | Scroll to top |
 | `t` | Enter try-it-out mode |
-| `e` | Quick execute (reuses saved params) |
+| `e` | Quick execute (reuses saved overrides) — works from either panel |
 | `m` | Open manual request builder |
+| `E` | Edit selected saved request |
+| `D` | Delete selected saved request |
 | `\` | Toggle request / response tab |
 | `/` | Cycle response status tabs |
 
@@ -128,10 +140,14 @@ Press `?` inside tuiagger to open the full interactive cheatsheet.
 | Key | Action |
 |-----|--------|
 | `e` | Execute request |
-| `p` | Edit path |
+| `p` | Edit path override |
 | `m` | Cycle HTTP method |
 | `r` | Reset overrides |
 | `Esc` | Exit try-it-out |
+| `k` (at first PARAMETERS row) | Focus the HEADERS section |
+| `j` (past last param) | Focus the BODY section |
+| `i` (body focused) | Edit body (scaffolds realistic data if empty) |
+| `k` / `Esc` (body focused) | Back to parameters / exit try-it-out |
 
 ### Parameters / Headers
 
@@ -139,20 +155,21 @@ Press `?` inside tuiagger to open the full interactive cheatsheet.
 |-----|--------|
 | `j` / `k` | Navigate rows |
 | `i` | Edit value |
-| `←` / `→` | Cycle enum values |
+| `←` / `→` | Cycle enum values (PARAMETERS only) |
 | `d` | Toggle enable / disable |
 | `x` | Delete custom row |
-| `c` | Cycle param type (query / path) |
-| `Tab` | Move to next section |
+| `c` | Cycle param type — query / path (PARAMETERS only; HEADERS entries are always type "header") |
 
 ### Response Body
 
 | Key | Action |
 |-----|--------|
 | `J` / `K` | Scroll down / up |
+| `j` / `k` | Also work as J/K while a visual selection is active |
 | `g` / `G` | Jump to top / bottom |
-| `v` | Toggle visual selection |
+| `v` | Toggle visual selection mode |
 | `y` | Yank selection (or full body) to clipboard |
+| `C` | Yank the generated curl command to clipboard |
 | `Esc` | Cancel visual mode |
 
 ### Info Panel (`i`)
@@ -178,12 +195,14 @@ Press `?` inside tuiagger to open the full interactive cheatsheet.
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Next field |
-| `a` | Add query / header row |
-| `d` | Delete selected row |
+| `p` | Edit path |
+| `m` | Cycle HTTP method |
 | `e` | Execute request |
-| `s` | Save request |
-| `Esc` | Close |
+| `s` | Save request (opens name/tag dialog) |
+| `d` | Delete request (only while editing a saved request via `E`) |
+| `Esc` | Close (discards an unsaved draft) |
+| `k` (at first PARAMETERS row) | Focus the HEADERS section |
+| `j` (past last param, write methods only) | Focus the BODY section |
 
 ## Faker Interpolation
 
@@ -210,9 +229,9 @@ Then use `{{base_url}}` or `{{api_key}}` anywhere in your request. The active en
 ## Development
 
 ```bash
-npm run build       # compile TypeScript
-npm run dev         # watch mode
-npm start -- PetStore   # run against a collection
+task check    # gofmt-check + go vet + go test — run before committing
+task run -- PetStore   # build and run against a collection
+task smoke    # copy the bundled Petstore fixture into ~/.tuiagger/PetStore and launch it
 ```
 
 Test with the Petstore API:
@@ -220,12 +239,16 @@ Test with the Petstore API:
 https://petstore3.swagger.io/api/v3/openapi.json
 ```
 
+Run `task` with no arguments to list every available task (build, run, test, vet, fmt, vendor, clean).
+
 ## Tech Stack
 
-- [Ink](https://github.com/vadimdemedes/ink) - React for CLI
-- [@readme/openapi-parser](https://github.com/readmeio/openapi-parser) - OpenAPI 3.x parsing
-- [@faker-js/faker](https://fakerjs.dev/) - test data generation
-- TypeScript
+- [Bubbletea](https://github.com/charmbracelet/bubbletea) — Elm-architecture TUI framework
+- [Lipgloss](https://github.com/charmbracelet/lipgloss) — terminal styling
+- [Bubbles](https://github.com/charmbracelet/bubbles) — text input / textarea components
+- [pb33f/libopenapi](https://github.com/pb33f/libopenapi) — OpenAPI 3.0.x/3.1.x parsing
+- [gofakeit](https://github.com/brianvoe/gofakeit) — test data generation
+- Go
 
 ## License
 

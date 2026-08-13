@@ -9,89 +9,56 @@ Tuiagger is a CLI application that renders OpenAPI specifications in an interact
 ## Tech Stack
 
 ### Core Framework
-- **Ink** (`ink` v7.x) - React-based library for building CLI applications
-- **React 19+** with hooks (useState, useEffect, useMemo)
-- **@inkjs/ui** v2 - Pre-built UI components (Select, Spinner, TextInput)
+- **Bubbletea** (`github.com/charmbracelet/bubbletea`) - Elm-architecture TUI framework
+- **Lipgloss** - terminal styling
+- **Bubbles** - text input / textarea components
 
 ### OpenAPI Parsing
-- **@readme/openapi-parser** v5 - Parse and validate OpenAPI specs (3.0.x and 3.1.x)
+- **pb33f/libopenapi** - Parse and validate OpenAPI specs (3.0.x and 3.1.x)
 
 ### Test Data Generation
-- **@faker-js/faker** - Realistic test data via `{{faker.*.*()}}` interpolation
+- **gofakeit** - Realistic test data via `{{faker.*.*()}}` interpolation
 
 ### HTTP Client
-- **Native fetch** - For "Try it out" API execution
+- **Native net/http** - For "Try it out" API execution
 
 ## Project Structure
 
 ```
 tuiagger/
-├── src/
-│   ├── index.tsx                      # Entry point, CLI argument handling
-│   ├── App.tsx                        # Root component, two-panel layout
-│   ├── components/
-│   │   ├── index.ts                   # Barrel exports
-│   │   ├── Header.tsx                 # API title, version, active environment badge
-│   │   ├── LeftPanel.tsx              # Scrollable tags/endpoints list
-│   │   ├── RightPanel.tsx             # Details/editor panel container
-│   │   ├── StatusBar.tsx              # Bottom keyboard shortcuts bar
-│   │   ├── MethodBadge.tsx            # Colored HTTP method label
-│   │   ├── ParametersSection.tsx      # Spec parameters display
-│   │   ├── ResponsesSection.tsx       # Response codes display
-│   │   ├── ResponseViewer.tsx         # Response body with visual select/yank
-│   │   ├── KeyValueEditor.tsx         # Key-value pair editor (params/headers)
-│   │   ├── SpecParamRow.tsx           # Single spec parameter row
-│   │   ├── CustomParamRow.tsx         # Single custom/override parameter row
-│   │   ├── AddNewParamRow.tsx         # Row for adding new custom parameters
-│   │   ├── HeadersSection.tsx         # Request headers editor
-│   │   ├── ManualRequestPanel.tsx     # Manual request builder panel
-│   │   ├── ManualSaveDialog.tsx       # Save dialog for manual requests
-│   │   ├── InfoPopup.tsx              # Info overlay (servers / auth / environments)
-│   │   ├── ServersSection.tsx         # Server selector within InfoPopup
-│   │   ├── AuthSection.tsx            # Auth config (Bearer / Basic / API key)
-│   │   ├── EnvironmentsSection.tsx    # Named environment variable sets
-│   │   ├── HelpPopup.tsx              # Interactive keyboard shortcut cheatsheet
-│   │   └── Spinner.tsx                # Loading indicator
-│   ├── hooks/
-│   │   ├── index.ts                   # Barrel exports
-│   │   ├── useAppKeyboard.ts          # Global keyboard handler
-│   │   ├── usePanelNavigation.ts      # Two-panel focus management
-│   │   ├── useRightPanelKeyboard.ts   # Right panel keyboard handler
-│   │   ├── useManualPanelKeyboard.ts  # Manual request panel keyboard handler
-│   │   ├── useParamNavigation.ts      # Parameter row navigation
-│   │   ├── useHeadersNavigation.ts    # Headers section navigation
-│   │   ├── useServersKeyboard.ts      # Server selector keyboard handler
-│   │   ├── useAuthKeyboard.ts         # Auth section keyboard handler
-│   │   ├── useEnvironmentsKeyboard.ts # Environments section keyboard handler
-│   │   ├── useOpenAPI.ts              # OpenAPI spec loading/parsing
-│   │   ├── useRequest.ts              # HTTP request execution
-│   │   ├── useSavedRequests.ts        # Saved manual requests state
-│   │   ├── useOverrides.ts            # Per-endpoint parameter overrides
-│   │   ├── useAuth.ts                 # Auth credentials state
-│   │   ├── useEnvironments.ts         # Environments state
-│   │   └── useStorage.ts              # Generic async storage primitive
-│   ├── utils/
-│   │   ├── index.ts                   # Barrel exports
-│   │   ├── collectionResolver.ts      # Resolve collection name → spec path
-│   │   ├── parser.ts                  # OpenAPI parsing utilities
-│   │   ├── urlBuilder.ts              # URL construction with params
-│   │   ├── requestBuilder.ts          # Build full request from spec + overrides
-│   │   ├── parameterCollector.ts      # Collect/merge parameters from spec
-│   │   ├── curlGenerator.ts           # Curl command generation
-│   │   ├── interpolate.ts             # {{faker.*}} and {{env}} interpolation
-│   │   ├── scaffoldBody.ts            # Auto-generate request body from schema
-│   │   ├── externalEditor.ts          # Open body in $EDITOR
-│   │   ├── persistence.ts             # File I/O for all stored data
-│   │   └── colors.ts                  # HTTP method color mapping
-│   ├── contexts/
-│   │   └── ServicesContext.tsx        # HttpClient DI context (fetch adapter)
-│   └── types/
-│       ├── index.ts                   # Type exports
-│       ├── openapi.ts                 # OpenAPI spec type definitions
-│       ├── request.ts                 # Request/response types
-│       └── services.ts                # HttpClient interface + fetch adapter
-├── package.json
-├── tsconfig.json
+├── cmd/
+│   └── tuiagger/
+│       └── main.go                    # Entry point, CLI argument handling
+├── internal/
+│   ├── tui/
+│   │   ├── model.go                   # Root Model, Update, key routing
+│   │   ├── view.go                    # Root View, two-panel layout render
+│   │   ├── flatlist.go                # Left panel tag/endpoint flattening
+│   │   ├── tryit.go                   # Try-it-out mode state and keys
+│   │   ├── manual.go                  # Manual request builder
+│   │   ├── responseviewer.go          # Response body + curl viewer (visual select/yank)
+│   │   ├── infopopup.go               # Info overlay (servers / auth / environments)
+│   │   ├── savedialog.go              # Save dialog for manual requests
+│   │   ├── help.go                    # Interactive keyboard shortcut cheatsheet
+│   │   └── colors.go                  # HTTP method color mapping
+│   ├── openapi/
+│   │   ├── parser.go                  # OpenAPI spec loading/parsing (libopenapi)
+│   │   ├── schema.go                  # Schema traversal helpers
+│   │   └── scaffold_fake.go           # Auto-generate request body from schema
+│   ├── request/
+│   │   ├── builder.go                 # Build full request from spec + overrides
+│   │   ├── collector.go               # Collect/merge parameters from spec
+│   │   ├── curl.go                    # Curl command generation
+│   │   ├── executor.go                # HTTP request execution
+│   │   ├── faker.go                   # {{faker.*}} interpolation
+│   │   ├── interpolate.go             # {{env}} variable interpolation
+│   │   ├── urlbuilder.go              # URL construction with params
+│   │   └── client.go                  # HttpClient interface + net/http adapter
+│   └── storage/
+│       ├── collection.go              # Collection name -> spec path resolution
+│       ├── persistence.go             # Atomic file I/O for all stored data
+│       └── types.go                   # Override/saved-request/auth/env types
+├── go.mod
 └── CLAUDE.md
 ```
 
@@ -172,6 +139,7 @@ Try It Out:
   m             - Cycle HTTP method
   r             - Reset overrides
   Esc           - Exit try-it-out
+  k (at first PARAMETERS row) - Focus the HEADERS section
   j (past last param) - Focus the BODY section
   i (body focused)     - Edit body (scaffolds realistic data if empty)
   k / Esc (body focused) - Back to parameters / exit try-it-out
@@ -208,15 +176,18 @@ Environments:
   Esc           - Back to environment list
 
 Manual Request (m):
-  Tab           - Next field (path / params / body)
   p             - Edit path
   m             - Cycle HTTP method
   e             - Execute request
   s             - Save request (opens name/tag dialog)
   d             - Delete request (only while editing a saved request via 'E')
   Esc           - Close (discards an unsaved draft)
-  (row editing inside the params table follows the Parameters / Headers
-  table above: j/k move, i edit/add, x delete, c cycle query/header/path)
+  k (at first PARAMETERS row) - Focus the HEADERS section
+  j (past last PARAMETERS row, write methods only) - Focus the BODY section
+  (row editing inside PARAMETERS/HEADERS follows the Parameters / Headers
+  table above: j/k move, i edit/add, x delete, d toggle enable, c cycle
+  query/path type — PARAMETERS only, HEADERS entries are always type
+  "header")
 
 Save Dialog (s):
   Tab           - Switch field (name / tag)
@@ -316,7 +287,7 @@ All state is written to the collection directory (or `.tuiagger/` in cwd for non
 
 ## Services / DI
 
-`ServicesContext` provides an `HttpClient` interface to the component tree. The production adapter uses native `fetch`. This seam exists to allow the HTTP layer to be swapped without touching request logic.
+`internal/request` defines an `HttpClient` interface. The production adapter uses native `net/http`. This seam exists to allow the HTTP layer to be swapped (e.g. for tests) without touching request logic.
 
 ## Test Data
 

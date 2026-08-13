@@ -26,10 +26,9 @@ const (
 	tabRequestBody
 )
 
-// responseViewer is the visual-select-and-yank response body viewer,
-// promoted from the Phase 0 spike (internal/spike/viewer) and rebuilt in
-// Phase 3's UX-parity pass to match ResponseViewer.tsx: a request/response
-// tab toggle, its own scroll-follow viewport, and a transient yank message.
+// responseViewer is the visual-select-and-yank response body viewer: a
+// request/response tab toggle, its own scroll-follow viewport, and a
+// transient yank message.
 // Curl is rendered as its own separate section below the body (see render)
 // — not part of Lines/Cursor/the visual-selection scroll, since it's a
 // fixed, always-fully-shown block, not something to navigate line by line.
