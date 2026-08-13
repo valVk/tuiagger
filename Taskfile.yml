@@ -10,9 +10,11 @@ tasks:
     silent: true
 
   build:
-    desc: Build the tuiagger binary into ./bin
+    desc: "Build the tuiagger binary into ./bin (pass VERSION=vX.Y.Z to stamp a release version)"
+    vars:
+      VERSION: '{{.VERSION | default "dev"}}'
     cmds:
-      - go build -o {{.BIN}} ./cmd/tuiagger
+      - go build -ldflags="-s -w -X main.version={{.VERSION}}" -o {{.BIN}} ./cmd/tuiagger
 
   run:
     desc: "Build and run tuiagger (pass args: task run -- PetStore)"

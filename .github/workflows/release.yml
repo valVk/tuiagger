@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o tuiagger ./cmd/tuiagger
+
+      - name: Package tarball
+        id: package
+        run: |
+          ASSET="tuiagger_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
+          tar -czf "$ASSET" tuiagger
+          SHA=$(shasum -a 256 "$ASSET" | cut -d' ' -f1)
+          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.asset }}
+          path: ${{ steps.package.outputs.asset }}
+
+      - name: Record sha256
+        run: echo "${{ steps.package.outputs.sha256 }}  ${{ steps.package.outputs.asset }}" >> checksum.txt
+
+      - name: Upload checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksum-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: checksum.txt
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      darwin_arm64_sha: ${{ steps.shas.outputs.darwin_arm64 }}
+      darwin_amd64_sha: ${{ steps.shas.outputs.darwin_amd64 }}
+      linux_amd64_sha: ${{ steps.shas.outputs.linux_amd64 }}
+      linux_arm64_sha: ${{ steps.shas.outputs.linux_arm64 }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Collect checksums
+        id: shas
+        run: |
+          cat dist/checksum.txt
+          for f in darwin_arm64 darwin_amd64 linux_amd64 linux_arm64; do
+            goos=${f%_*}
+            goarch=${f#*_}
+            sha=$(grep "tuiagger_${goos}_${goarch}.tar.gz" dist/checksum.txt | cut -d' ' -f1)
+            echo "$f=$sha" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/tuiagger_*.tar.gz
+          generate_release_notes: true
+
+  update-tap:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tap repo
+        uses: actions/checkout@v5
+        with:
+          repository: valVK/homebrew-tuiagger
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Write formula
+        env:
+          TAG: ${{ github.ref_name }}
+          DARWIN_ARM64_SHA: ${{ needs.release.outputs.darwin_arm64_sha }}
+          DARWIN_AMD64_SHA: ${{ needs.release.outputs.darwin_amd64_sha }}
+          LINUX_AMD64_SHA: ${{ needs.release.outputs.linux_amd64_sha }}
+          LINUX_ARM64_SHA: ${{ needs.release.outputs.linux_arm64_sha }}
+        run: |
+          VERSION="${TAG#v}"
+          cat > Formula/tuiagger.rb <<EOF
+          class Tuiagger < Formula
+            desc "Terminal UI for viewing and interacting with OpenAPI/Swagger documentation"
+            homepage "https://github.com/valVK/tuiagger"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/valVK/tuiagger/releases/download/${TAG}/tuiagger_darwin_arm64.tar.gz"
+                sha256 "${DARWIN_ARM64_SHA}"
+              end
+              on_intel do
+                url "https://github.com/valVK/tuiagger/releases/download/${TAG}/tuiagger_darwin_amd64.tar.gz"
+                sha256 "${DARWIN_AMD64_SHA}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/valVK/tuiagger/releases/download/${TAG}/tuiagger_linux_amd64.tar.gz"
+                sha256 "${LINUX_AMD64_SHA}"
+              end
+              on_arm do
+                url "https://github.com/valVK/tuiagger/releases/download/${TAG}/tuiagger_linux_arm64.tar.gz"
+                sha256 "${LINUX_ARM64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "tuiagger"
+            end
+
+            test do
+              assert_match "tuiagger", shell_output("#{bin}/tuiagger --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/tuiagger.rb
+          git commit -m "Update tuiagger to ${{ github.ref_name }}"
+          git push

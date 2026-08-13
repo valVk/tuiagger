@@ -15,7 +15,9 @@ import (
 	"github.com/valVK/tuiagger/internal/tui"
 )
 
-const version = "v2.0.0"
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z"
+// (see .github/workflows/release.yml). Defaults to "dev" for local builds.
+var version = "dev"
 
 const helpText = `
 tuiagger - TUI Swagger/OpenAPI Documentation Viewer
