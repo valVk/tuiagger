@@ -15,7 +15,7 @@ import (
 	"github.com/valVK/tuiagger/internal/tui"
 )
 
-const version = "v0.1.0-go"
+const version = "v2.0.0"
 
 const helpText = `
 tuiagger - TUI Swagger/OpenAPI Documentation Viewer
