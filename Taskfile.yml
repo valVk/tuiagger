@@ -1,0 +1,76 @@
+version: '3'
+
+vars:
+  BIN: bin/tuiagger
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build the tuiagger binary into ./bin
+    cmds:
+      - go build -o {{.BIN}} ./cmd/tuiagger
+
+  run:
+    desc: "Build and run tuiagger (pass args: task run -- PetStore)"
+    cmds:
+      - go run ./cmd/tuiagger {{.CLI_ARGS}}
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  smoke:
+    desc: "Launch the real TUI via a named collection (like `tuiagger PetStore`) for manual verification (needs a real terminal)"
+    cmds:
+      - mkdir -p ~/.tuiagger/PetStore
+      - cp internal/openapi/testdata/petstore.json ~/.tuiagger/PetStore/
+      - go run ./cmd/tuiagger PetStore
+
+  test-verbose:
+    desc: Run all tests with verbose output
+    cmds:
+      - go test -v ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  fmt:
+    desc: Format our Go source (excludes vendor/)
+    cmds:
+      - gofmt -w $(find . -name '*.go' -not -path './vendor/*')
+
+  fmt-check:
+    desc: Fail if any of our Go source is not gofmt-formatted (excludes vendor/)
+    cmds:
+      - |
+        files=$(gofmt -l $(find . -name '*.go' -not -path './vendor/*'))
+        if [ -n "$files" ]; then
+          echo "not gofmt-formatted:"
+          echo "$files"
+          exit 1
+        fi
+
+  vendor:
+    desc: Sync vendor/ with go.mod after adding/updating a dependency
+    cmds:
+      - go mod tidy
+      - go mod vendor
+
+  check:
+    desc: fmt-check + vet + test — run before considering a phase done
+    cmds:
+      - task: fmt-check
+      - task: vet
+      - task: test
+
+  clean:
+    desc: Remove build output
+    cmds:
+      - rm -rf bin

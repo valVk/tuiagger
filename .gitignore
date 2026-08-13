@@ -1,8 +1,6 @@
+bin/
 # Dependencies
-node_modules/
-
-# Build output
-dist/
+vendor/
 
 # Local config
 .twagger/
@@ -19,11 +17,12 @@ Thumbs.db
 
 # Logs
 *.log
-npm-debug.log*
 
 # Environment
 .env
 .env.local
+
+.tuiagger
 
 .claude/*
 !.claude/skills/
