@@ -313,10 +313,13 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 			store.SaveEndpointOverride(string(method), ep.Path, override)
 		}
 
+		envVars, authCreds := loadEnvAndAuth(store)
+
 		collector := &request.ParameterCollector{
 			SpecParams:      specParams,
 			DisabledParams:  disabled,
 			ParameterValues: paramValues,
+			EnvVars:         envVars,
 		}
 
 		path := ep.Path
@@ -337,6 +340,9 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 				break
 			}
 		}
+		if body != "" {
+			body = request.Interpolate(body, envVars)
+		}
 
 		spec := request.Spec{
 			Method:            effectiveMethod,
@@ -347,6 +353,7 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 			Body:              body,
 			OperationSecurity: security,
 			SecuritySchemes:   securitySchemes,
+			AuthCredentials:   authCreds,
 		}
 
 		if client == nil {
@@ -363,6 +370,22 @@ func isWriteMethod(method string) bool {
 		return true
 	}
 	return false
+}
+
+// loadEnvAndAuth reads the active environment's variables and stored auth
+// credentials at execute time — shared by tryit.go and manual.go so both
+// request paths get {{envVar}} interpolation and auth injection now that
+// Phase 5 wired credential/environment editing into the info popup.
+func loadEnvAndAuth(store *storage.Store) (envVars, authCreds map[string]string) {
+	if store == nil {
+		return nil, nil
+	}
+	envStore := store.LoadEnvironments()
+	if envStore.ActiveIndex >= 0 && envStore.ActiveIndex < len(envStore.Environments) {
+		envVars = envStore.Environments[envStore.ActiveIndex].Variables
+	}
+	authCreds = store.LoadAuth().Credentials
+	return envVars, authCreds
 }
 
 // renderTryItLines renders the try-it-out variant of the endpoint detail

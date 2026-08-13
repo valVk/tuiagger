@@ -255,6 +255,17 @@ func (s *Store) SaveAuth(store AuthStore) error {
 	return atomicWriteJSON(s.authPath(), store)
 }
 
+// SetCredential stores one scheme's credential value, matching
+// useAuth.ts's setCredential.
+func (s *Store) SetCredential(schemeName, value string) error {
+	store := s.LoadAuth()
+	if store.Credentials == nil {
+		store.Credentials = map[string]string{}
+	}
+	store.Credentials[schemeName] = value
+	return s.SaveAuth(store)
+}
+
 // ============ Environments ============
 
 func (s *Store) LoadEnvironments() EnvironmentsStore {
@@ -263,4 +274,56 @@ func (s *Store) LoadEnvironments() EnvironmentsStore {
 
 func (s *Store) SaveEnvironments(store EnvironmentsStore) error {
 	return atomicWriteJSON(s.environmentsPath(), store)
+}
+
+// SetActiveEnvironment matches useEnvironments.ts's setActive.
+func (s *Store) SetActiveEnvironment(index int) error {
+	store := s.LoadEnvironments()
+	store.ActiveIndex = index
+	return s.SaveEnvironments(store)
+}
+
+// AddEnvironment appends a new, variable-less environment, matching
+// useEnvironments.ts's addEnvironment.
+func (s *Store) AddEnvironment(name string) error {
+	store := s.LoadEnvironments()
+	store.Environments = append(store.Environments, Environment{Name: name, Variables: map[string]string{}})
+	return s.SaveEnvironments(store)
+}
+
+// DeleteEnvironment removes the environment at index and re-clamps
+// ActiveIndex, matching useEnvironments.ts's deleteEnvironment.
+func (s *Store) DeleteEnvironment(index int) error {
+	store := s.LoadEnvironments()
+	if index < 0 || index >= len(store.Environments) {
+		return nil
+	}
+	store.Environments = append(store.Environments[:index], store.Environments[index+1:]...)
+	if store.ActiveIndex >= len(store.Environments) {
+		store.ActiveIndex = len(store.Environments) - 1
+	}
+	return s.SaveEnvironments(store)
+}
+
+// SetEnvironmentVariable matches useEnvironments.ts's setVariable.
+func (s *Store) SetEnvironmentVariable(envIndex int, key, value string) error {
+	store := s.LoadEnvironments()
+	if envIndex < 0 || envIndex >= len(store.Environments) {
+		return nil
+	}
+	if store.Environments[envIndex].Variables == nil {
+		store.Environments[envIndex].Variables = map[string]string{}
+	}
+	store.Environments[envIndex].Variables[key] = value
+	return s.SaveEnvironments(store)
+}
+
+// DeleteEnvironmentVariable matches useEnvironments.ts's deleteVariable.
+func (s *Store) DeleteEnvironmentVariable(envIndex int, key string) error {
+	store := s.LoadEnvironments()
+	if envIndex < 0 || envIndex >= len(store.Environments) {
+		return nil
+	}
+	delete(store.Environments[envIndex].Variables, key)
+	return s.SaveEnvironments(store)
 }

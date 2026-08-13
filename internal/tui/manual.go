@@ -392,6 +392,7 @@ func (m Model) runRequestCmd(method, path string, params []storage.CustomParamet
 	specServers := m.Spec.Spec.Servers
 	selectedServer := m.SelectedServer
 	client := m.HTTPClient
+	store := m.Store
 	security := m.Spec.Spec.Security
 	var securitySchemes map[string]openapi.SecurityScheme
 	if m.Spec.Spec.Components != nil {
@@ -412,16 +413,19 @@ func (m Model) runRequestCmd(method, path string, params []storage.CustomParamet
 			baseURL = specServers[idx].URL
 		}
 
-		collector := &request.ParameterCollector{CustomParams: params}
+		envVars, authCreds := loadEnvAndAuth(store)
+
+		collector := &request.ParameterCollector{CustomParams: params, EnvVars: envVars}
 		spec := request.Spec{
 			Method:            method,
 			BaseURL:           baseURL,
 			Path:              collector.ApplyPathParams(path),
 			QueryParams:       collector.QueryParams(),
 			HeaderParams:      collector.HeaderParams(),
-			Body:              body,
+			Body:              request.Interpolate(body, envVars),
 			OperationSecurity: security,
 			SecuritySchemes:   securitySchemes,
+			AuthCredentials:   authCreds,
 		}
 
 		if client == nil {

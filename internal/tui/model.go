@@ -93,6 +93,8 @@ type Model struct {
 	ServerCursor int
 	AuthCursor   int
 	EnvCursor    int
+	Auth         authEditState
+	Env          envEditState
 
 	// Source is the collection/path/URL the spec was loaded from, kept for
 	// Ctrl+R reload (re-runs openapi.ParseOpenAPISpec against it).
@@ -187,7 +189,8 @@ func computeAllTags(specTags []string, customTags []storage.CustomTag, reqs []st
 func (m Model) isEditingText() bool {
 	return m.TryIt.EditingPath || m.TryIt.ParamEditing ||
 		m.Manual.EditingPath || m.Manual.ParamEditing || m.Manual.EditingBody ||
-		m.Manual.ShowSaveDialog || m.Mode == ModeRenameTag
+		m.Manual.ShowSaveDialog || m.Mode == ModeRenameTag ||
+		m.Auth.Editing || m.Env.InsertingVar || m.Env.AddingEnv
 }
 
 func (m Model) isCustomTag(name string) bool {
@@ -313,7 +316,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHelpKey(key)
 	}
 	if m.ShowInfo {
-		return m.handleInfoKey(key)
+		return m.handleInfoKey(msg)
 	}
 
 	if m.Mode == ModeManual {

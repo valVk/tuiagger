@@ -119,8 +119,11 @@ func (m Model) renderHeader() string {
 	}
 
 	right := ""
+	if name := m.activeEnvName(); name != "" {
+		right += yellowStyle.Render("env: " + name + "  ")
+	}
 	if m.Spec != nil && len(m.Spec.Spec.Servers) > m.SelectedServer && m.SelectedServer >= 0 {
-		right = dimStyle.Render("server: ") + cyanStyle.Render(m.Spec.Spec.Servers[m.SelectedServer].URL)
+		right += dimStyle.Render("server: ") + cyanStyle.Render(m.Spec.Spec.Servers[m.SelectedServer].URL)
 	}
 
 	style := lipgloss.NewStyle().

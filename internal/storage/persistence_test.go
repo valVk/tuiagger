@@ -218,6 +218,83 @@ func TestRenameCustomTagRejectsConflictsAndNoop(t *testing.T) {
 	}
 }
 
+func TestSetCredential(t *testing.T) {
+	s, err := NewStore("", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCredential("bearerAuth", "token-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCredential("apiKeyAuth", "key-1"); err != nil {
+		t.Fatal(err)
+	}
+	creds := s.LoadAuth().Credentials
+	if creds["bearerAuth"] != "token-1" || creds["apiKeyAuth"] != "key-1" {
+		t.Errorf("expected both credentials persisted, got %+v", creds)
+	}
+
+	if err := s.SetCredential("bearerAuth", "token-2"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.LoadAuth().Credentials["bearerAuth"]; got != "token-2" {
+		t.Errorf("expected overwrite, got %q", got)
+	}
+}
+
+func TestEnvironmentCRUD(t *testing.T) {
+	s, err := NewStore("", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.AddEnvironment("dev"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddEnvironment("prod"); err != nil {
+		t.Fatal(err)
+	}
+	envs := s.LoadEnvironments().Environments
+	if len(envs) != 2 || envs[0].Name != "dev" || envs[1].Name != "prod" {
+		t.Fatalf("expected two environments in insertion order, got %+v", envs)
+	}
+
+	if err := s.SetActiveEnvironment(1); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.LoadEnvironments().ActiveIndex; got != 1 {
+		t.Errorf("expected active index 1, got %d", got)
+	}
+
+	if err := s.SetEnvironmentVariable(1, "BASE_URL", "https://prod.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.LoadEnvironments().Environments[1].Variables["BASE_URL"]; got != "https://prod.example.com" {
+		t.Errorf("expected variable set, got %q", got)
+	}
+
+	if err := s.DeleteEnvironmentVariable(1, "BASE_URL"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.LoadEnvironments().Environments[1].Variables["BASE_URL"]; ok {
+		t.Errorf("expected variable deleted")
+	}
+
+	// Deleting the active environment (index 1, the last one) must clamp
+	// ActiveIndex back onto the remaining list, matching
+	// useEnvironments.ts's deleteEnvironment.
+	if err := s.DeleteEnvironment(1); err != nil {
+		t.Fatal(err)
+	}
+	store := s.LoadEnvironments()
+	if len(store.Environments) != 1 || store.Environments[0].Name != "dev" {
+		t.Fatalf("expected only 'dev' left, got %+v", store.Environments)
+	}
+	if store.ActiveIndex != 0 {
+		t.Errorf("expected active index clamped to 0, got %d", store.ActiveIndex)
+	}
+}
+
 func TestCollectionScopedVsCwdScopedPaths(t *testing.T) {
 	cwd := t.TempDir()
 	collectionDir := t.TempDir()
