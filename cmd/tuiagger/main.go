@@ -4,8 +4,10 @@ package main
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"slices"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valVK/tuiagger/internal/openapi"
@@ -79,23 +81,38 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// "Remote"/"Local" are ResolveCollection's placeholder names for a bare
-	// URL or file path — not a real collection name worth showing in the UI.
+	// URL or file path — not a real collection name worth showing in the UI,
+	// and per collectionResolver.ts's setCollectionPath, only a real named
+	// collection scopes override/auth/environment storage to its directory.
 	displayName := collection.Name
+	collectionDir := collection.Path
 	if displayName == "Remote" || displayName == "Local" {
 		displayName = ""
+		collectionDir = ""
 	}
 
-	if err := launchTUI(parsed, displayName); err != nil {
+	store, err := storage.NewStore(collectionDir, "")
+	if err != nil {
+		fmt.Fprintf(stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	model := tui.New(parsed, displayName).WithServices(httpClient(), store)
+	if err := launchTUI(model); err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return 1
 	}
 	return 0
 }
 
+func httpClient() *http.Client {
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
 // launchTUI runs the real Bubbletea program. It's a package-level var so
 // tests can swap in a stub instead of taking over the terminal.
-var launchTUI = func(parsed *openapi.ParsedSpec, collectionName string) error {
-	p := tea.NewProgram(tui.New(parsed, collectionName), tea.WithAltScreen())
+var launchTUI = func(model tui.Model) error {
+	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }

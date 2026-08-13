@@ -3,6 +3,7 @@ package openapi
 import (
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"strings"
@@ -147,6 +148,8 @@ func convertDocument(doc *v3.Document) *Spec {
 		spec.Tags = append(spec.Tags, Tag{Name: t.Name, Description: t.Description})
 	}
 
+	spec.Security = convertSecurity(doc.Security)
+
 	if doc.Paths != nil {
 		for path, item := range doc.Paths.PathItems.FromOldest() {
 			spec.Paths = append(spec.Paths, PathEntry{Path: path, Item: convertPathItem(item)})
@@ -189,6 +192,7 @@ func convertOperation(op *v3.Operation) *Operation {
 		Description: op.Description,
 		OperationID: op.OperationId,
 		Deprecated:  op.Deprecated != nil && *op.Deprecated,
+		Security:    convertSecurity(op.Security),
 	}
 
 	for _, p := range op.Parameters {
@@ -248,6 +252,19 @@ func convertMediaTypeMap(content *orderedmap.Map[string, *v3.MediaType]) map[str
 			Schema:  convertSchemaProxy(mt.Schema, nil),
 			Example: nodeToAny(mt.Example),
 		}
+	}
+	return out
+}
+
+func convertSecurity(reqs []*base.SecurityRequirement) []SecurityRequirement {
+	var out []SecurityRequirement
+	for _, r := range reqs {
+		if r.Requirements == nil {
+			continue
+		}
+		req := make(SecurityRequirement, r.Requirements.Len())
+		maps.Insert(req, r.Requirements.FromOldest())
+		out = append(out, req)
 	}
 	return out
 }

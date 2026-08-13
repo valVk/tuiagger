@@ -9,8 +9,11 @@ import (
 	"maps"
 	"sort"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valVK/tuiagger/internal/openapi"
+	"github.com/valVK/tuiagger/internal/request"
+	"github.com/valVK/tuiagger/internal/storage"
 )
 
 type ActivePanel int
@@ -19,6 +22,32 @@ const (
 	PanelLeft ActivePanel = iota
 	PanelRight
 )
+
+type Mode int
+
+const (
+	ModeBrowse Mode = iota
+	ModeTryIt
+)
+
+// tryItState holds everything scoped to one endpoint's try-it-out session.
+// It's reset whenever the left-panel selection changes, matching the TS
+// app's selectedItem-change effect in App.tsx.
+type tryItState struct {
+	ParamValues    map[string]string
+	DisabledParams map[string]bool
+	OverridePath   string
+	OverrideMethod string
+
+	ParamCursor  int
+	ParamEditing bool
+	ValueInput   textinput.Model
+
+	EditingPath bool
+	PathInput   textinput.Model
+
+	ShowResetConfirm bool
+}
 
 type Model struct {
 	Spec           *openapi.ParsedSpec
@@ -34,6 +63,17 @@ type Model struct {
 	LeftIndex   int
 	RightScroll int
 	ResponseTab int // index into the selected endpoint's sorted response codes
+
+	Mode  Mode
+	TryIt tryItState
+
+	Response *request.Response
+	Curl     string
+	Loading  bool
+	Viewer   responseViewer
+
+	HTTPClient request.HTTPClient
+	Store      *storage.Store
 
 	Width, Height int
 	Quitting      bool
@@ -59,12 +99,37 @@ func New(spec *openapi.ParsedSpec, collectionName string) Model {
 	return m
 }
 
+// WithServices injects the HTTP client and persistence store — split from
+// New so tests can build a Model without a real store/client when neither
+// is exercised.
+func (m Model) WithServices(client request.HTTPClient, store *storage.Store) Model {
+	m.HTTPClient = client
+	m.Store = store
+	return m
+}
+
 func (m Model) Init() tea.Cmd { return nil }
+
+// responseMsg carries a completed request's result back into Update — the
+// tea.Cmd pattern that keeps HTTP execution out of Update itself.
+type responseMsg struct {
+	response *request.Response
+	curl     string
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.Width, m.Height = msg.Width, msg.Height
+		return m, nil
+	case responseMsg:
+		m.Loading = false
+		m.Response = msg.response
+		m.Curl = msg.curl
+		m.RightScroll = 0
+		if msg.response != nil {
+			m.Viewer = newResponseViewer(msg.response.Body, max(m.Height-10, 5))
+		}
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -74,6 +139,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+
+	if m.Mode == ModeTryIt {
+		return m.handleTryItKey(msg)
+	}
 
 	switch key {
 	case "q":
@@ -85,11 +154,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "l", "right":
 		m.ActivePanel = PanelRight
 		return m, nil
+	case "t":
+		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
+			return m.enterTryIt(), nil
+		}
+		return m, nil
 	}
 
 	if m.ActivePanel == PanelLeft {
 		return m.handleLeftPanelKey(key)
 	}
+
+	// Response-viewer visual-select keys (J/K/g/G/v/y) take priority over
+	// generic scroll (j/k/g) when a response is present — distinct key
+	// casing means both coexist without a mode flag, matching the TS app.
+	if m.Response != nil {
+		switch key {
+		case "J", "K", "G", "v", "y", "esc":
+			var cmd tea.Cmd
+			m.Viewer, cmd = m.Viewer.handleKey(key)
+			return m, cmd
+		}
+	}
+
 	return m.handleRightPanelKey(key)
 }
 
@@ -167,6 +254,13 @@ func (m Model) handleRightPanelKey(key string) (tea.Model, tea.Cmd) {
 			if len(codes) > 0 {
 				m.ResponseTab = (m.ResponseTab + 1) % len(codes)
 			}
+		}
+		return m, nil
+	case "e":
+		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
+			cmd := m.quickExecuteCmd(item.Endpoint)
+			m.Loading = true
+			return m, cmd
 		}
 		return m, nil
 	}

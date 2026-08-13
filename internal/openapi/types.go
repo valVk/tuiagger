@@ -30,7 +30,13 @@ type Spec struct {
 	Paths      []PathEntry
 	Components *Components
 	Tags       []Tag
+	Security   []SecurityRequirement
 }
+
+// SecurityRequirement maps a security scheme name to its required scopes
+// (empty for non-OAuth2 schemes), matching one entry of OpenAPI's
+// `security: [{ schemeName: [...scopes] }]` array.
+type SecurityRequirement map[string][]string
 
 // PathEntry preserves spec declaration order (a Go map would not).
 type PathEntry struct {
@@ -64,6 +70,7 @@ type Operation struct {
 	RequestBody *RequestBody
 	Responses   []ResponseEntry
 	Deprecated  bool
+	Security    []SecurityRequirement
 }
 
 type ResponseEntry struct {

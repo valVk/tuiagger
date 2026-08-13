@@ -6,28 +6,24 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/valVK/tuiagger/internal/openapi"
+	"github.com/valVK/tuiagger/internal/tui"
 )
 
 // stubTUI replaces launchTUI for the duration of a test so tests never take
 // over the real terminal; it restores the real implementation on cleanup and
-// returns a pointer to the ParsedSpec/collectionName it was called with (nil
-// until launchTUI runs).
+// returns a pointer to the built Model (nil until launchTUI runs).
 func stubTUI(t *testing.T) *struct {
-	parsed *openapi.ParsedSpec
-	name   string
+	model  tui.Model
 	called bool
 } {
 	t.Helper()
 	got := &struct {
-		parsed *openapi.ParsedSpec
-		name   string
+		model  tui.Model
 		called bool
 	}{}
 	original := launchTUI
-	launchTUI = func(parsed *openapi.ParsedSpec, collectionName string) error {
-		got.parsed = parsed
-		got.name = collectionName
+	launchTUI = func(model tui.Model) error {
+		got.model = model
 		got.called = true
 		return nil
 	}
@@ -102,12 +98,12 @@ func TestLocalSpecPathLaunchesTUI(t *testing.T) {
 	if !got.called {
 		t.Fatalf("expected launchTUI to be called")
 	}
-	if got.parsed == nil || got.parsed.Spec.Info.Title == "" {
-		t.Errorf("expected a parsed spec to be passed through, got %+v", got.parsed)
+	if got.model.Spec == nil || got.model.Spec.Spec.Info.Title == "" {
+		t.Errorf("expected a parsed spec to be passed through, got %+v", got.model.Spec)
 	}
 	// Local file paths have no meaningful collection name.
-	if got.name != "" {
-		t.Errorf("expected empty collection name for a local path, got %q", got.name)
+	if got.model.CollectionName != "" {
+		t.Errorf("expected empty collection name for a local path, got %q", got.model.CollectionName)
 	}
 }
 
@@ -136,8 +132,14 @@ func TestNamedCollectionPassesCollectionName(t *testing.T) {
 	if !got.called {
 		t.Fatalf("expected launchTUI to be called")
 	}
-	if got.name != "TestCol" {
-		t.Errorf("expected collection name TestCol, got %q", got.name)
+	if got.model.CollectionName != "TestCol" {
+		t.Errorf("expected collection name TestCol, got %q", got.model.CollectionName)
+	}
+	if got.model.Store == nil {
+		t.Errorf("expected a Store to be wired for a named collection")
+	}
+	if got.model.HTTPClient == nil {
+		t.Errorf("expected an HTTPClient to be wired")
 	}
 }
 

@@ -18,12 +18,15 @@ func loadTestSpec(t *testing.T) *openapi.ParsedSpec {
 
 func key(s string) tea.KeyMsg {
 	switch s {
-	case "j", "k", "g", "G", "h", "l", "c", "x", "q", "/":
+	case "j", "k", "g", "G", "h", "l", "c", "x", "q", "/",
+		"t", "e", "i", "d", "m", "p", "r", "y", "n", "Y", "N", "J", "K", "v":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	case "enter":
 		return tea.KeyMsg{Type: tea.KeyEnter}
 	case "down":
 		return tea.KeyMsg{Type: tea.KeyDown}
+	case "esc":
+		return tea.KeyMsg{Type: tea.KeyEsc}
 	}
 	panic("unhandled key " + s)
 }

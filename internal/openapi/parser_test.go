@@ -84,6 +84,41 @@ func TestParse31FixtureWebhooksAndNullableType(t *testing.T) {
 	}
 }
 
+func TestOperationSecurityAndSecuritySchemesParsed(t *testing.T) {
+	parsed, err := ParseOpenAPISpec("testdata/mini31.json")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	var getWidget *ParsedEndpoint
+	for i := range parsed.Endpoints {
+		if parsed.Endpoints[i].Operation.OperationID == "getWidget" {
+			getWidget = &parsed.Endpoints[i]
+		}
+	}
+	if getWidget == nil {
+		t.Fatalf("expected getWidget endpoint")
+	}
+	if len(getWidget.Operation.Security) != 1 {
+		t.Fatalf("expected 1 security requirement, got %d", len(getWidget.Operation.Security))
+	}
+	scopes, ok := getWidget.Operation.Security[0]["bearerAuth"]
+	if !ok {
+		t.Fatalf("expected bearerAuth requirement, got %+v", getWidget.Operation.Security[0])
+	}
+	if len(scopes) != 0 {
+		t.Errorf("expected no scopes for bearer auth, got %v", scopes)
+	}
+
+	scheme, ok := parsed.Spec.Components.SecuritySchemes["bearerAuth"]
+	if !ok {
+		t.Fatalf("expected bearerAuth security scheme in components")
+	}
+	if scheme.Type != "http" || scheme.Scheme != "bearer" || scheme.BearerFormat != "JWT" {
+		t.Errorf("unexpected scheme: %+v", scheme)
+	}
+}
+
 func TestExtractTagsDefaultsUntaggedEndpoints(t *testing.T) {
 	parsed, err := ParseOpenAPISpec("testdata/mini31.json")
 	if err != nil {

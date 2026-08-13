@@ -73,9 +73,12 @@ func (m Model) renderHeader() string {
 
 func (m Model) renderStatusBar() string {
 	staticHints := "q:quit  i:info  ?:help  Ctrl+r:reload"
-	dynamicHints := "h/l:panels  j/k:navigate  Enter:expand  c/x:collapse/expand"
-	if m.ActivePanel == PanelRight {
-		dynamicHints = "h/l:panels  j/k:scroll  g:top  /:next response"
+	dynamicHints := "h/l:panels  j/k:navigate  Enter:expand  c/x:collapse/expand  t:try it"
+	switch {
+	case m.Mode == ModeTryIt:
+		dynamicHints = "j/k:params  i:edit  d:disable  m:method  p:path  e:execute  r:reset  Esc:cancel"
+	case m.ActivePanel == PanelRight:
+		dynamicHints = "h/l:panels  j/k:scroll  g:top  /:next response  t:try it  e:quick execute"
 	}
 	position := fmt.Sprintf("%d/%d", m.safeLeftIndex()+1, len(m.FlatList))
 
@@ -178,10 +181,14 @@ func (m Model) renderRightPanel(height, width int) string {
 	var lines []string
 	item := m.selectedItem()
 	switch {
+	case m.Loading:
+		lines = []string{cyanStyle.Render("Executing request...")}
 	case item == nil:
 		lines = []string{dimStyle.Render("Select an endpoint from the left panel (j/k to navigate)")}
 	case item.Type == ItemTag:
 		lines = m.renderTagLines(item.TagName, width-2)
+	case item.Type == ItemEndpoint && m.Mode == ModeTryIt:
+		lines = m.renderTryItLines(item.Endpoint, width-2)
 	case item.Type == ItemEndpoint:
 		lines = m.renderEndpointLines(item.Endpoint, width-2)
 	}
@@ -231,18 +238,9 @@ func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, width int) []stri
 
 	if len(op.Parameters) > 0 {
 		lines = append(lines, "", boldStyle.Render("PARAMETERS"))
-		lines = append(lines, dimStyle.Render(padRight("NAME", 25)+padRight("TYPE", 12)+"DESCRIPTION"))
+		lines = append(lines, dimStyle.Render(padRight("NAME", 25)+padRight("VALUE", 20)+padRight("TYPE", 10)+"DESCRIPTION"))
 		for _, p := range sortedParameters(op.Parameters) {
-			name := p.Name
-			if p.Required {
-				name += " *"
-			}
-			typeStr := ""
-			if p.Schema != nil && len(p.Schema.Type) > 0 {
-				typeStr = p.Schema.Type[0]
-			}
-			desc := truncate(p.Description, max(width-39, 4))
-			lines = append(lines, padRight(truncate(name, 24), 25)+padRight(truncate(typeStr, 11), 12)+desc)
+			lines = append(lines, renderParamRow(p, "", false, false, false, "", width))
 		}
 	}
 
@@ -258,7 +256,68 @@ func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, width int) []stri
 
 	lines = append(lines, "", boldStyle.Render("RESPONSES"))
 	lines = append(lines, renderResponseTabs(op, m.ResponseTab)...)
+	lines = append(lines, m.renderResponseBlock(width)...)
 
+	return lines
+}
+
+// renderParamRow renders one PARAMETERS row for both browse (read-only,
+// value always "") and try-it-out (editable) modes — the two modes share
+// this one row renderer rather than each maintaining their own copy.
+func renderParamRow(p openapi.Parameter, value string, selected, editing, disabled bool, editingView string, width int) string {
+	name := p.Name
+	if p.Required {
+		name += " *"
+	}
+	typeStr := ""
+	if p.Schema != nil && len(p.Schema.Type) > 0 {
+		typeStr = p.Schema.Type[0]
+	}
+	desc := truncate(p.Description, max(width-59, 4))
+
+	valueCell := truncate(value, 19)
+	if editing {
+		valueCell = truncate(editingView, 19)
+	}
+	if disabled {
+		valueCell = "(disabled)"
+	}
+
+	row := padRight(truncate(name, 24), 25) + padRight(valueCell, 20) + padRight(truncate(typeStr, 9), 10) + desc
+	if disabled {
+		row = dimStyle.Render(row)
+	}
+	if selected {
+		row = lipgloss.NewStyle().Reverse(true).Render(row)
+	}
+	return row
+}
+
+// renderResponseBlock renders the curl command and response body (via the
+// visual-select viewer) shared between browse and try-it-out modes.
+func (m Model) renderResponseBlock(width int) []string {
+	if m.Response == nil {
+		return nil
+	}
+	var lines []string
+	lines = append(lines, "", boldStyle.Render("RESPONSE"))
+	if m.Response.Error != "" {
+		lines = append(lines, lipgloss.NewStyle().Foreground(color5xx).Render("Error: "+m.Response.Error))
+	} else {
+		statusLine := lipgloss.NewStyle().Foreground(StatusColor(m.Response.Status)).Bold(true).
+			Render(fmt.Sprintf("%d %s", m.Response.Status, m.Response.StatusText))
+		lines = append(lines, statusLine+dimStyle.Render(fmt.Sprintf("  %dms", m.Response.TimeMs)))
+	}
+	if m.Curl != "" {
+		lines = append(lines, "", dimStyle.Render("curl:"))
+		for l := range strings.SplitSeq(m.Curl, "\n") {
+			lines = append(lines, dimStyle.Render(l))
+		}
+	}
+	if m.Response.Body != "" {
+		lines = append(lines, "", boldStyle.Render("BODY")+dimStyle.Render("  J/K:move v:select y:yank"))
+		lines = append(lines, m.Viewer.render(width)...)
+	}
 	return lines
 }
 

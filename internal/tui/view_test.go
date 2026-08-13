@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/valVK/tuiagger/internal/request"
 )
 
 func TestViewRendersWithoutPanicAtVariousSizes(t *testing.T) {
@@ -50,6 +51,54 @@ func TestViewShowsEmptySelectionPrompt(t *testing.T) {
 	out := m.View()
 	if !strings.Contains(out, "Select an endpoint") {
 		t.Errorf("expected empty-selection prompt, got:\n%s", out)
+	}
+}
+
+func TestViewRendersTryItModeWithoutPanic(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = step(m, "t")
+	out := m.View()
+	if !strings.Contains(out, "Execute") {
+		t.Errorf("expected try-it hints in view, got:\n%s", out)
+	}
+}
+
+func TestViewRendersResponseBlockWithoutPanic(t *testing.T) {
+	// View() only exposes whatever fits the current scroll window, and the
+	// response block sits after a long params/body/responses section for
+	// most endpoints — assert on the block renderer directly rather than
+	// depending on scroll position within the full View() output.
+	m := firstEndpointModel(t)
+	next, _ := m.Update(responseMsg{
+		response: &request.Response{Status: 200, StatusText: "OK", Body: "{\n  \"a\": 1\n}", TimeMs: 12},
+		curl:     "curl 'http://x'",
+	})
+	m = next.(Model)
+
+	out := m.View() // still must not panic at whatever scroll position
+	if out == "" {
+		t.Errorf("expected non-empty view")
+	}
+
+	block := strings.Join(m.renderResponseBlock(80), "\n")
+	if !strings.Contains(block, "200") {
+		t.Errorf("expected status code in response block, got:\n%s", block)
+	}
+}
+
+func TestViewRendersErrorResponseWithoutPanic(t *testing.T) {
+	m := firstEndpointModel(t)
+	next, _ := m.Update(responseMsg{response: &request.Response{Error: "connection refused"}})
+	m = next.(Model)
+
+	out := m.View()
+	if out == "" {
+		t.Errorf("expected non-empty view")
+	}
+
+	block := strings.Join(m.renderResponseBlock(80), "\n")
+	if !strings.Contains(block, "connection refused") {
+		t.Errorf("expected error text in response block, got:\n%s", block)
 	}
 }
 

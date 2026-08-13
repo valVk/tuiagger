@@ -10,6 +10,7 @@
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
+        "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": {
             "description": "ok",
@@ -48,6 +49,11 @@
         },
         "responses": { "200": { "description": "ack" } }
       }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
     }
   }
 }
