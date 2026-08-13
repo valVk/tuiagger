@@ -394,11 +394,12 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) []string 
 	}
 	lines = append(lines, header, "")
 
-	hints := "[ Execute (e) ] [ Cancel (Esc) ]"
+	buttons := []button{}
 	if methodModified || pathModified {
-		hints = "[ Reset (r) ] " + hints
+		buttons = append(buttons, button{"Reset (r)", yellowStyle})
 	}
-	lines = append(lines, dimStyle.Render(hints), "")
+	buttons = append(buttons, button{"Execute (e)", greenBoldStyle}, button{"Cancel (Esc)", dimStyle})
+	lines = append(lines, renderButtons(buttons), "")
 
 	if op.Summary != "" {
 		lines = append(lines, boldStyle.Render(op.Summary))
@@ -409,7 +410,9 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) []string 
 
 	params := sortedParameters(op.Parameters)
 	if len(params) > 0 {
-		lines = append(lines, "", boldStyle.Render("PARAMETERS")+dimStyle.Render("  j/k:move i:edit d:disable ←/→:enum"))
+		lines = append(lines, "", boldStyle.Render("PARAMETERS")+"  "+renderHints([]hint{
+			{"j/k", "move"}, {"i", "edit"}, {"d", "disable"}, {"←/→", "enum"},
+		}))
 		lines = append(lines, dimStyle.Render(padRight("NAME", 25)+padRight("VALUE", 20)+padRight("TYPE", 10)+"DESCRIPTION"))
 		for i, p := range params {
 			selected := i == m.TryIt.ParamCursor

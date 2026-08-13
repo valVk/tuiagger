@@ -16,7 +16,36 @@ var (
 	boldStyle           = lipgloss.NewStyle().Bold(true)
 	cyanStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	yellowStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	greenBoldStyle      = lipgloss.NewStyle().Foreground(color2xx).Bold(true)
 )
+
+// hint is one "key:label" pair rendered with a cyan key and a dim label,
+// matching StatusBar.tsx's ShortcutList (a flat dim string loses the
+// key/label distinction that makes the hint scannable).
+type hint struct{ key, label string }
+
+func renderHints(hints []hint) string {
+	parts := make([]string, len(hints))
+	for i, h := range hints {
+		parts[i] = cyanStyle.Render(h.key) + dimStyle.Render(":"+h.label)
+	}
+	return strings.Join(parts, dimStyle.Render("  "))
+}
+
+// button is one bracketed action hint, e.g. "[ Execute (e) ]", matching the
+// TS RightPanel's inline "[ Try it out (t) ][ Execute (e) ]" banner.
+type button struct {
+	text  string
+	style lipgloss.Style
+}
+
+func renderButtons(buttons []button) string {
+	parts := make([]string, len(buttons))
+	for i, b := range buttons {
+		parts[i] = dimStyle.Render("[ ") + b.style.Render(b.text) + dimStyle.Render(" ]")
+	}
+	return strings.Join(parts, " ")
+}
 
 func (m Model) View() string {
 	if m.Quitting {
@@ -72,14 +101,26 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderStatusBar() string {
-	staticHints := "q:quit  i:info  ?:help  Ctrl+r:reload"
-	dynamicHints := "h/l:panels  j/k:navigate  Enter:expand  c/x:collapse/expand  t:try it"
+	staticHints := []hint{{"q", "quit"}, {"i", "info"}, {"?", "help"}, {"Ctrl+r", "reload"}}
+
+	var dynamicHints []hint
 	switch {
 	case m.Mode == ModeTryIt:
-		dynamicHints = "j/k:params  i:edit  d:disable  m:method  p:path  e:execute  r:reset  Esc:cancel"
+		dynamicHints = []hint{
+			{"j/k", "params"}, {"i", "edit"}, {"d", "disable"},
+			{"m", "method"}, {"p", "path"}, {"e", "execute"}, {"r", "reset"}, {"Esc", "cancel"},
+		}
 	case m.ActivePanel == PanelRight:
-		dynamicHints = "h/l:panels  j/k:scroll  g:top  /:next response  t:try it  e:quick execute"
+		dynamicHints = []hint{
+			{"h/l", "panels"}, {"j/k", "scroll"}, {"g", "top"}, {"/", "next response"},
+			{"t", "try it"}, {"e", "quick execute"},
+		}
+	default:
+		dynamicHints = []hint{
+			{"h/l", "panels"}, {"j/k", "navigate"}, {"Enter", "expand"}, {"c/x", "collapse/expand"}, {"t", "try it"},
+		}
 	}
+
 	position := fmt.Sprintf("%d/%d", m.safeLeftIndex()+1, len(m.FlatList))
 
 	style := lipgloss.NewStyle().
@@ -92,8 +133,8 @@ func (m Model) renderStatusBar() string {
 		BorderRight(false).
 		BorderForeground(inactiveBorderColor)
 
-	left := cyanStyle.Render(staticHints)
-	right := dimStyle.Render(dynamicHints + "  " + position)
+	left := renderHints(staticHints)
+	right := renderHints(dynamicHints) + dimStyle.Render("  "+position)
 	gap := max(m.Width-2-lipgloss.Width(left)-lipgloss.Width(right)-2, 1)
 	return style.Render(left + strings.Repeat(" ", gap) + right)
 }
@@ -190,7 +231,7 @@ func (m Model) renderRightPanel(height, width int) string {
 	case item.Type == ItemEndpoint && m.Mode == ModeTryIt:
 		lines = m.renderTryItLines(item.Endpoint, width-2)
 	case item.Type == ItemEndpoint:
-		lines = m.renderEndpointLines(item.Endpoint, width-2)
+		lines = m.renderEndpointLines(item.Endpoint, active, width-2)
 	}
 
 	visibleHeight := max(height-2, 1)
@@ -219,12 +260,24 @@ func (m Model) renderTagLines(tagName string, width int) []string {
 	return lines
 }
 
-func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, width int) []string {
+func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, active bool, width int) []string {
 	op := ep.Operation
 	var lines []string
 
 	lines = append(lines, MethodBadge(string(ep.Method))+" "+boldStyle.Render(ep.Path))
 	lines = append(lines, "")
+
+	if active {
+		saved := ""
+		if m.Store != nil {
+			if o := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); o != nil {
+				saved = yellowStyle.Render("  *saved params")
+			}
+		}
+		lines = append(lines, lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(
+			renderButtons([]button{{"Try it out (t)", cyanStyle}, {"Quick execute (e)", greenBoldStyle}})+saved,
+		), "")
+	}
 
 	if op.Summary != "" {
 		lines = append(lines, boldStyle.Render(op.Summary))
@@ -315,7 +368,9 @@ func (m Model) renderResponseBlock(width int) []string {
 		}
 	}
 	if m.Response.Body != "" {
-		lines = append(lines, "", boldStyle.Render("BODY")+dimStyle.Render("  J/K:move v:select y:yank"))
+		lines = append(lines, "", boldStyle.Render("BODY")+"  "+renderHints([]hint{
+			{"J/K", "move"}, {"v", "select"}, {"y", "yank"},
+		}))
 		lines = append(lines, m.Viewer.render(width)...)
 	}
 	return lines

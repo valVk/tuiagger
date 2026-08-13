@@ -42,6 +42,46 @@ func TestViewShowsEndpointDetailsWhenSelected(t *testing.T) {
 	}
 }
 
+func TestActionBannerShownOnlyWhenRightPanelActive(t *testing.T) {
+	m := firstEndpointModel(t)
+
+	// Left panel focused: no action banner (matches TS's `isActive` gate).
+	leftOut := strings.Join(m.renderEndpointLines(m.selectedItem().Endpoint, false, 80), "\n")
+	if strings.Contains(leftOut, "Try it out") {
+		t.Errorf("expected no action banner while left panel focused")
+	}
+
+	rightOut := strings.Join(m.renderEndpointLines(m.selectedItem().Endpoint, true, 80), "\n")
+	if !strings.Contains(rightOut, "Try it out (t)") || !strings.Contains(rightOut, "Quick execute (e)") {
+		t.Errorf("expected action banner when right panel active, got:\n%s", rightOut)
+	}
+}
+
+func TestStatusBarHintsColorKeysDistinctFromLabels(t *testing.T) {
+	m := firstEndpointModel(t)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = next.(Model)
+	out := m.renderStatusBar()
+	// The key gets a cyan ANSI code (36) that the label text must not share
+	// — a regression to one flat dim block would collapse this to a single
+	// escape sequence with no cyan segment at all.
+	if !strings.Contains(out, "\x1b[36m") {
+		t.Errorf("expected status bar hint keys to carry a distinct cyan style, got:\n%q", out)
+	}
+}
+
+func TestTryItActionButtonsAreColored(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = step(m, "t")
+	out := strings.Join(m.renderTryItLines(m.selectedItem().Endpoint, 80), "\n")
+	if !strings.Contains(out, "Execute (e)") {
+		t.Errorf("expected Execute button, got:\n%s", out)
+	}
+	if !strings.Contains(out, "\x1b[32;1m") && !strings.Contains(out, "\x1b[1;32m") {
+		t.Errorf("expected Execute button to be green+bold, got:\n%q", out)
+	}
+}
+
 func TestViewShowsEmptySelectionPrompt(t *testing.T) {
 	// A spec with no endpoints selects nothing meaningful on the right —
 	// guard against a nil-selection panic explicitly.
