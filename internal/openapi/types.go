@@ -84,6 +84,7 @@ type Parameter struct {
 	Required    bool
 	Description string
 	Deprecated  bool
+	Example     any
 	Schema      *Schema
 }
 

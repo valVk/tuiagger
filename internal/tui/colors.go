@@ -54,16 +54,12 @@ func StatusColor(status int) lipgloss.Color {
 }
 
 // MethodBadge renders a method as a colored, padded badge, matching
-// MethodBadge.tsx (width defaults to 8 there; content is padded to 7 chars
-// plus a leading space, giving the same 8-column footprint).
+// MethodBadge.tsx exactly: method.toUpperCase().padEnd(8), prefixed with
+// one space (a 9-character interior).
 func MethodBadge(method string) string {
 	style := lipgloss.NewStyle().
 		Background(MethodColor(method)).
 		Foreground(lipgloss.Color("15")).
 		Bold(true)
-	upper := strings.ToUpper(method)
-	for len(upper) < 7 {
-		upper += " "
-	}
-	return style.Render(" " + upper)
+	return style.Render(" " + padRight(strings.ToUpper(method), 8))
 }

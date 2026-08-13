@@ -128,8 +128,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Curl = msg.curl
 		m.RightScroll = 0
 		if msg.response != nil {
-			m.Viewer = newResponseViewer(msg.response.Body, max(m.Height-10, 5))
+			m.Viewer = newResponseViewer(msg.response.Body)
 		}
+		return m, nil
+	case yankExpiredMsg:
+		m.Viewer.Yanked = false
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -165,15 +168,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleLeftPanelKey(key)
 	}
 
-	// Response-viewer visual-select keys (J/K/g/G/v/y) take priority over
-	// generic scroll (j/k/g) when a response is present — distinct key
-	// casing means both coexist without a mode flag, matching the TS app.
+	// Response-viewer keys (J/K/G/v/y/Esc/\) take priority over generic
+	// scroll (j/k/g) when a response is present — distinct key casing means
+	// both coexist without a mode flag, matching the TS app. Lowercase 'g'
+	// is bound by both ResponseViewer.tsx (jump response cursor to top) and
+	// usePanelNavigation.ts (reset panel scroll) as two independent Ink
+	// input handlers that both fire on the same keypress — replicated here
+	// by routing to the viewer and then still falling through to the
+	// generic handler below, rather than picking one.
 	if m.Response != nil {
 		switch key {
-		case "J", "K", "G", "v", "y", "esc":
+		case "J", "K", "G", "v", "y", "esc", `\`:
 			var cmd tea.Cmd
 			m.Viewer, cmd = m.Viewer.handleKey(key)
 			return m, cmd
+		case "g":
+			m.Viewer, _ = m.Viewer.handleKey(key)
 		}
 	}
 

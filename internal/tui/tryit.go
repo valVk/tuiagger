@@ -2,9 +2,11 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -219,11 +221,22 @@ func enumValues(p openapi.Parameter) []string {
 	return out
 }
 
+// toStr matches JS's `.toString()` coercion used throughout the TS app for
+// enum/example/default values: strings pass through, other JSON scalars are
+// stringified, nil becomes "".
 func toStr(v any) string {
-	if s, ok := v.(string); ok {
-		return s
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case bool:
+		return strconv.FormatBool(t)
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	default:
+		return fmt.Sprintf("%v", t)
 	}
-	return ""
 }
 
 // executeCmd saves the current overrides and runs the request in the
@@ -413,7 +426,7 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) []string 
 		lines = append(lines, "", boldStyle.Render("PARAMETERS")+"  "+renderHints([]hint{
 			{"j/k", "move"}, {"i", "edit"}, {"d", "disable"}, {"←/→", "enum"},
 		}))
-		lines = append(lines, dimStyle.Render(padRight("NAME", 25)+padRight("VALUE", 20)+padRight("TYPE", 10)+"DESCRIPTION"))
+		lines = append(lines, paramTableHeader())
 		for i, p := range params {
 			selected := i == m.TryIt.ParamCursor
 			editing := selected && m.TryIt.ParamEditing
@@ -421,7 +434,10 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) []string 
 			if editing {
 				editingView = m.TryIt.ValueInput.View()
 			}
-			lines = append(lines, renderParamRow(p, m.TryIt.ParamValues[p.Name], selected, editing, m.TryIt.DisabledParams[p.Name], editingView, width))
+			lines = append(lines, renderParamRow(paramRowState{
+				param: p, value: m.TryIt.ParamValues[p.Name], selected: selected,
+				editing: editing, disabled: m.TryIt.DisabledParams[p.Name], editingView: editingView,
+			}, width)...)
 		}
 	}
 
@@ -435,8 +451,10 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) []string 
 		}
 	}
 
-	lines = append(lines, "", boldStyle.Render("RESPONSES"))
-	lines = append(lines, renderResponseTabs(op, m.ResponseTab)...)
+	// Matches ResponsesSection.tsx's isActive={isActive && !isTryItMode} —
+	// this section is never "active" while in try-it-out mode, so its
+	// '/:next' hint and per-tab status color never show here.
+	lines = append(lines, renderResponseTabs(op, m.ResponseTab, false)...)
 	lines = append(lines, m.renderResponseBlock(width)...)
 
 	return lines

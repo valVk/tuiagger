@@ -238,6 +238,7 @@ func convertParameter(p *v3.Parameter) Parameter {
 		Required:    p.Required != nil && *p.Required,
 		Description: p.Description,
 		Deprecated:  p.Deprecated,
+		Example:     nodeToAny(p.Example),
 		Schema:      convertSchemaProxy(p.Schema, nil),
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valVK/tuiagger/internal/request"
+	"github.com/valVK/tuiagger/internal/storage"
 )
 
 func TestViewRendersWithoutPanicAtVariousSizes(t *testing.T) {
@@ -82,6 +83,66 @@ func TestTryItActionButtonsAreColored(t *testing.T) {
 	}
 }
 
+func TestResponsesHeadingMatchesTSCasingAndNextHint(t *testing.T) {
+	m := firstEndpointModel(t) // left panel focused -> not "active"
+	item := m.selectedItem()
+	inactiveOut := strings.Join(m.renderEndpointLines(item.Endpoint, false, 80), "\n")
+	if !strings.Contains(inactiveOut, "Responses") {
+		t.Errorf("expected 'Responses' (TS casing, not 'RESPONSES'), got:\n%s", inactiveOut)
+	}
+	if strings.Contains(inactiveOut, "/:next") {
+		t.Errorf("expected no /:next hint while inactive, got:\n%s", inactiveOut)
+	}
+
+	if len(item.Endpoint.Operation.Responses) < 2 {
+		t.Skip("endpoint doesn't have multiple response codes to test /:next")
+	}
+	activeOut := strings.Join(m.renderEndpointLines(item.Endpoint, true, 80), "\n")
+	if !strings.Contains(activeOut, "/:next") {
+		t.Errorf("expected /:next hint when active with multiple response codes, got:\n%s", activeOut)
+	}
+}
+
+func TestOnlyActiveResponseTabGetsStatusColor(t *testing.T) {
+	m := firstEndpointModel(t)
+	item := m.selectedItem()
+	if len(item.Endpoint.Operation.Responses) < 2 {
+		t.Skip("endpoint doesn't have multiple response codes")
+	}
+	out := strings.Join(renderResponseTabs(item.Endpoint.Operation, 0, true), "\n")
+	// The active tab (first, since activeTab=0) is bold+reverse+colored in
+	// one combined SGR sequence; inactive tabs render with no escape codes
+	// at all (TS: color only when isTab — replicated exactly).
+	if !strings.Contains(out, ";7;") { // reverse video (SGR 7) only on the active tab
+		t.Errorf("expected active tab to include reverse-video SGR code, got:\n%q", out)
+	}
+	if !strings.Contains(out, " 400 ") { // inactive tab: bare text, no escape prefix
+		t.Errorf("expected inactive tab rendered as plain text, got:\n%q", out)
+	}
+}
+
+func TestLeftPanelShowsOverrideIndicator(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = m.WithServices(nil, newTestStore(t))
+	item := m.selectedItem()
+	ep := item.Endpoint
+
+	before := m.renderListRow(*item, false, 80)
+	if strings.Contains(before, "~") {
+		t.Errorf("expected no override indicator before any override saved, got %q", before)
+	}
+
+	if err := m.Store.SaveEndpointOverride(string(ep.Method), ep.Path, storage.EndpointOverride{
+		Params: map[string]string{"a": "b"}, CustomParams: []storage.CustomParameter{}, DisabledParams: []string{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after := m.renderListRow(*item, false, 80)
+	if !strings.Contains(after, "~") {
+		t.Errorf("expected '~' override indicator after saving an override, got %q", after)
+	}
+}
+
 func TestViewShowsEmptySelectionPrompt(t *testing.T) {
 	// A spec with no endpoints selects nothing meaningful on the right —
 	// guard against a nil-selection panic explicitly.
@@ -126,9 +187,15 @@ func TestViewRendersResponseBlockWithoutPanic(t *testing.T) {
 	}
 }
 
-func TestViewRendersErrorResponseWithoutPanic(t *testing.T) {
+// TS's ResponseViewer never renders response.error (grepped — zero call
+// sites); a network failure just leaves status=0/"Error" and an empty body,
+// rendered through the exact same status-line path as any other response.
+// This looks like a gap in the TS app, but "strictly follow the TS UX
+// decisions" means replicating it rather than silently improving on it —
+// flagged in HANDOFF.md as a candidate the user may want to diverge from.
+func TestViewRendersErrorResponseMatchesTSSilentBehavior(t *testing.T) {
 	m := firstEndpointModel(t)
-	next, _ := m.Update(responseMsg{response: &request.Response{Error: "connection refused"}})
+	next, _ := m.Update(responseMsg{response: &request.Response{Status: 0, StatusText: "Error"}})
 	m = next.(Model)
 
 	out := m.View()
@@ -137,8 +204,8 @@ func TestViewRendersErrorResponseWithoutPanic(t *testing.T) {
 	}
 
 	block := strings.Join(m.renderResponseBlock(80), "\n")
-	if !strings.Contains(block, "connection refused") {
-		t.Errorf("expected error text in response block, got:\n%s", block)
+	if !strings.Contains(block, "Error") {
+		t.Errorf("expected bare '0 Error' status text, got:\n%s", block)
 	}
 }
 

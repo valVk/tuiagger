@@ -146,9 +146,12 @@ func (m Model) renderLeftPanel(height, width int) string {
 		borderColor = activeBorderColor
 	}
 
-	title := "ENDPOINTS"
+	title := boldStyle.Render("ENDPOINTS")
 	if m.Spec != nil {
-		title = m.Spec.Spec.Info.Title
+		title = boldStyle.Render(truncate(m.Spec.Spec.Info.Title, width-2))
+		if active {
+			title += dimStyle.Render(" (i)")
+		}
 	}
 
 	visibleHeight := max(height-4, 1)
@@ -169,7 +172,7 @@ func (m Model) renderLeftPanel(height, width int) string {
 
 	var lines []string
 	for i := startIndex; i < end; i++ {
-		lines = append(lines, renderListRow(m.FlatList[i], i == selected, m.ExpandedTags, width-2))
+		lines = append(lines, m.renderListRow(m.FlatList[i], i == selected, width-2))
 	}
 	for len(lines) < visibleHeight {
 		lines = append(lines, "")
@@ -180,7 +183,7 @@ func (m Model) renderLeftPanel(height, width int) string {
 		footer = dimStyle.Render(fmt.Sprintf("%d/%d", selected+1, len(m.FlatList)))
 	}
 
-	content := boldStyle.Render(truncate(title, width-2)) + "\n" + strings.Join(lines, "\n") + "\n" + footer
+	content := title + "\n" + strings.Join(lines, "\n") + "\n" + footer
 
 	return lipgloss.NewStyle().
 		Width(width).
@@ -191,25 +194,37 @@ func (m Model) renderLeftPanel(height, width int) string {
 		Render(content)
 }
 
-func renderListRow(item FlatListItem, selected bool, expanded map[string]bool, width int) string {
-	rowStyle := lipgloss.NewStyle()
-	if selected {
-		rowStyle = rowStyle.Reverse(true)
-	}
-
+// renderListRow matches LeftPanel.tsx's row rendering: tag rows show an
+// expand/collapse arrow + item count; endpoint rows prefix a '~' when a
+// saved override exists for that endpoint (path/method/body/params), and
+// highlight the path (not the whole row) when selected.
+func (m Model) renderListRow(item FlatListItem, selected bool, width int) string {
 	if item.Type == ItemTag {
 		arrow := "▶"
-		if expanded[item.TagName] {
+		if m.ExpandedTags[item.TagName] {
 			arrow = "▼"
 		}
-		return rowStyle.Bold(true).Render(truncate(arrow+" "+item.TagName, width))
+		count := len(m.EndpointsByTag[item.TagName])
+		style := boldStyle
+		if selected {
+			style = style.Foreground(lipgloss.Color("6")).Reverse(true)
+		}
+		return style.Render(truncate(arrow+" "+item.TagName, width)) + dimStyle.Render(fmt.Sprintf(" (%d)", count))
 	}
 
 	ep := item.Endpoint
+	cursor := "  "
+	if m.Store != nil && m.Store.GetEndpointOverride(string(ep.Method), ep.Path) != nil {
+		cursor = "~ "
+	}
 	method := padRight(strings.ToUpper(string(ep.Method)), 6)
 	methodStyle := lipgloss.NewStyle().Foreground(MethodColor(string(ep.Method))).Bold(true)
-	path := truncate(ep.Path, max(width-8, 4))
-	return methodStyle.Render(method) + " " + rowStyle.Render(path)
+	path := truncate(ep.Path, max(width-len(cursor)-7, 4))
+	pathStyle := lipgloss.NewStyle()
+	if selected {
+		pathStyle = pathStyle.Reverse(true).Foreground(lipgloss.Color("6"))
+	}
+	return cursor + methodStyle.Render(method) + " " + pathStyle.Render(path)
 }
 
 func (m Model) renderRightPanel(height, width int) string {
@@ -291,9 +306,9 @@ func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, active bool, widt
 
 	if len(op.Parameters) > 0 {
 		lines = append(lines, "", boldStyle.Render("PARAMETERS"))
-		lines = append(lines, dimStyle.Render(padRight("NAME", 25)+padRight("VALUE", 20)+padRight("TYPE", 10)+"DESCRIPTION"))
+		lines = append(lines, paramTableHeader())
 		for _, p := range sortedParameters(op.Parameters) {
-			lines = append(lines, renderParamRow(p, "", false, false, false, "", width))
+			lines = append(lines, renderParamRow(paramRowState{param: p}, width)...)
 		}
 	}
 
@@ -307,76 +322,164 @@ func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, active bool, widt
 		}
 	}
 
-	lines = append(lines, "", boldStyle.Render("RESPONSES"))
-	lines = append(lines, renderResponseTabs(op, m.ResponseTab)...)
+	lines = append(lines, renderResponseTabs(op, m.ResponseTab, active)...)
 	lines = append(lines, m.renderResponseBlock(width)...)
 
 	return lines
 }
 
+const (
+	paramCursorWidth = 3
+	paramNameWidth   = 25
+	paramValueWidth  = 25
+	paramTypeWidth   = 12
+)
+
+// paramTableHeader matches ParametersSection.tsx's column header row (a
+// blank cursor column, then NAME/VALUE/TYPE/DESCRIPTION).
+func paramTableHeader() string {
+	return strings.Repeat(" ", paramCursorWidth) +
+		dimStyle.Bold(true).Render(padRight("NAME", paramNameWidth)+padRight("VALUE", paramValueWidth)+padRight("TYPE", paramTypeWidth)+"DESCRIPTION")
+}
+
+// paramRowState is everything renderParamRow needs to reproduce
+// SpecParamRow.tsx's row exactly — selected/editing/disabled state plus the
+// live edit widget's rendered view (textinput.View(), when editing a
+// non-enum value).
+type paramRowState struct {
+	param       openapi.Parameter
+	value       string
+	selected    bool
+	editing     bool
+	disabled    bool
+	editingView string
+}
+
 // renderParamRow renders one PARAMETERS row for both browse (read-only,
-// value always "") and try-it-out (editable) modes — the two modes share
-// this one row renderer rather than each maintaining their own copy.
-func renderParamRow(p openapi.Parameter, value string, selected, editing, disabled bool, editingView string, width int) string {
-	name := p.Name
-	if p.Required {
-		name += " *"
+// selected/editing always false) and try-it-out (editable) modes — the two
+// share this one row renderer rather than each maintaining their own copy.
+// Matches SpecParamRow.tsx column-for-column, with one deliberate
+// adaptation: TS stacks the parameter's "in" (query/path/header) above its
+// type in a two-line-tall flexbox cell; here, where each row is one line in
+// a flat, line-sliced buffer, they're combined as "in:type" on one line
+// instead of doubling every row's height.
+func renderParamRow(s paramRowState, width int) []string {
+	p := s.param
+
+	cursor := "  "
+	switch {
+	case s.selected:
+		cursor = cyanStyle.Render("> ")
+	case p.Required:
+		cursor = lipgloss.NewStyle().Foreground(color5xx).Render("* ")
 	}
-	typeStr := ""
+
+	name := p.Name
+	nameStyle := lipgloss.NewStyle()
+	switch {
+	case s.selected:
+		nameStyle = cyanStyle
+	case s.disabled:
+		nameStyle = lipgloss.NewStyle().Foreground(inactiveBorderColor)
+	}
+	nameCell := padRight(nameStyle.Strikethrough(s.disabled).Render(truncateTS(name, paramNameWidth)), paramNameWidth)
+
+	enumOpts := enumValues(p)
+	placeholder := paramPlaceholder(p)
+
+	var valueCell string
+	switch {
+	case s.editing && !s.disabled && len(enumOpts) > 0:
+		current := s.value
+		if current == "" {
+			current = enumOpts[0]
+		}
+		valueCell = padRight(dimStyle.Render("< ")+cyanStyle.Render(current)+dimStyle.Render(" >"), paramValueWidth)
+	case s.editing && !s.disabled:
+		valueCell = padRight(truncateTS(s.editingView, paramValueWidth), paramValueWidth)
+	default:
+		valueStyle := lipgloss.NewStyle().Foreground(color2xx) // green
+		switch {
+		case s.disabled:
+			valueStyle = lipgloss.NewStyle().Foreground(inactiveBorderColor)
+		case s.selected:
+			valueStyle = cyanStyle
+		}
+		display := s.value
+		if display == "" {
+			display = placeholder
+		}
+		if display == "" {
+			display = "-"
+		}
+		valueCell = padRight(valueStyle.Render(truncateTS(display, paramValueWidth)), paramValueWidth)
+	}
+
+	typeStr := "string"
 	if p.Schema != nil && len(p.Schema.Type) > 0 {
 		typeStr = p.Schema.Type[0]
 	}
-	desc := truncate(p.Description, max(width-59, 4))
+	typeStyle := yellowStyle
+	if s.disabled {
+		typeStyle = lipgloss.NewStyle().Foreground(inactiveBorderColor)
+	}
+	typeCell := padRight(dimStyle.Render(p.In+":")+typeStyle.Render(typeStr), paramTypeWidth)
 
-	valueCell := truncate(value, 19)
-	if editing {
-		valueCell = truncate(editingView, 19)
-	}
-	if disabled {
-		valueCell = "(disabled)"
+	descWidth := max(width-paramCursorWidth-paramNameWidth-paramValueWidth-paramTypeWidth, 4)
+	desc := dimStyle.Render(truncate(p.Description, descWidth))
+
+	lines := []string{cursor + nameCell + valueCell + typeCell + desc}
+
+	if len(enumOpts) > 0 && !s.disabled {
+		hint := lipgloss.NewStyle().Foreground(activeBorderColor).Faint(true).
+			Render("Allowed: " + strings.Join(enumOpts, " | "))
+		lines = append(lines, strings.Repeat(" ", paramCursorWidth+paramNameWidth)+hint)
 	}
 
-	row := padRight(truncate(name, 24), 25) + padRight(valueCell, 20) + padRight(truncate(typeStr, 9), 10) + desc
-	if disabled {
-		row = dimStyle.Render(row)
-	}
-	if selected {
-		row = lipgloss.NewStyle().Reverse(true).Render(row)
-	}
-	return row
+	return lines
 }
 
-// renderResponseBlock renders the curl command and response body (via the
-// visual-select viewer) shared between browse and try-it-out modes.
+// truncateTS matches SpecParamRow.tsx's local truncate: text shorter than
+// maxLen-1 passes through untouched; otherwise it's cut to maxLen-2 chars
+// plus a 3-dot ellipsis (TS parity — distinct from this file's other
+// truncate, which uses a 2-dot ellipsis and a maxLen-0 threshold).
+func truncateTS(text string, maxLen int) string {
+	if len(text) <= maxLen-1 {
+		return text
+	}
+	if maxLen <= 2 {
+		return text[:max(maxLen, 0)]
+	}
+	return text[:maxLen-2] + "..."
+}
+
+func paramPlaceholder(p openapi.Parameter) string {
+	if p.Schema != nil && p.Schema.Default != nil {
+		return toStr(p.Schema.Default)
+	}
+	return toStr(p.Example)
+}
+
+// renderResponseBlock delegates to responseViewer.render, matching
+// ResponseViewer.tsx exactly (status/tab header, request/response tab
+// content, curl). "active" mirrors TS's `isActive={isActive && !isTryItMode}`
+// — the viewer's interactive hints (position indicator, tab-toggle hint,
+// selection hint) only show in browse mode with the right panel focused.
 func (m Model) renderResponseBlock(width int) []string {
 	if m.Response == nil {
 		return nil
 	}
-	var lines []string
-	lines = append(lines, "", boldStyle.Render("RESPONSE"))
-	if m.Response.Error != "" {
-		lines = append(lines, lipgloss.NewStyle().Foreground(color5xx).Render("Error: "+m.Response.Error))
-	} else {
-		statusLine := lipgloss.NewStyle().Foreground(StatusColor(m.Response.Status)).Bold(true).
-			Render(fmt.Sprintf("%d %s", m.Response.Status, m.Response.StatusText))
-		lines = append(lines, statusLine+dimStyle.Render(fmt.Sprintf("  %dms", m.Response.TimeMs)))
-	}
-	if m.Curl != "" {
-		lines = append(lines, "", dimStyle.Render("curl:"))
-		for l := range strings.SplitSeq(m.Curl, "\n") {
-			lines = append(lines, dimStyle.Render(l))
-		}
-	}
-	if m.Response.Body != "" {
-		lines = append(lines, "", boldStyle.Render("BODY")+"  "+renderHints([]hint{
-			{"J/K", "move"}, {"v", "select"}, {"y", "yank"},
-		}))
-		lines = append(lines, m.Viewer.render(width)...)
-	}
-	return lines
+	active := m.Mode == ModeBrowse && m.ActivePanel == PanelRight
+	return append([]string{""}, m.Viewer.render(m.Response, m.Curl, active, width)...)
 }
 
-func renderResponseTabs(op *openapi.Operation, activeTab int) []string {
+// renderResponseTabs matches ResponsesSection.tsx: "Responses" (not
+// "RESPONSES" — TS itself is inconsistent about heading case across
+// sections, replicated as-is), a "/:next" hint when active with more than
+// one status code, and — matching the TS ternary exactly — only the
+// *active* tab gets its status color; inactive tabs render in the default
+// terminal foreground, not dimmed or status-colored.
+func renderResponseTabs(op *openapi.Operation, activeTab int, active bool) []string {
 	codes := make([]string, len(op.Responses))
 	byCode := make(map[string]openapi.Response, len(op.Responses))
 	for i, r := range op.Responses {
@@ -389,13 +492,18 @@ func renderResponseTabs(op *openapi.Operation, activeTab int) []string {
 	}
 	safeTab := activeTab % len(codes)
 
+	heading := boldStyle.Render("Responses")
+	if active && len(codes) > 1 {
+		heading += dimStyle.Render(" /:next")
+	}
+
 	var tabLine strings.Builder
 	for i, code := range codes {
 		style := lipgloss.NewStyle()
-		if statusNum, ok := parseStatus(code); ok {
-			style = style.Foreground(StatusColor(statusNum))
-		}
 		if i == safeTab {
+			if statusNum, ok := parseStatus(code); ok {
+				style = style.Foreground(StatusColor(statusNum))
+			}
 			style = style.Reverse(true).Bold(true)
 		}
 		tabLine.WriteString(style.Render(" " + code + " "))
@@ -403,7 +511,7 @@ func renderResponseTabs(op *openapi.Operation, activeTab int) []string {
 	}
 
 	resp := byCode[codes[safeTab]]
-	lines := []string{tabLine.String(), dimStyle.Render(resp.Description)}
+	lines := []string{"", heading, tabLine.String(), dimStyle.Render(resp.Description)}
 	schema := firstSchema(resp.Content)
 	if schema != nil {
 		for l := range strings.SplitSeq(openapi.FormatSchema(schema, 0), "\n") {
