@@ -25,6 +25,8 @@ npm-debug.log*
 .env
 .env.local
 
+.tuiagger
+
 .claude/*
 !.claude/skills/
 !.claude/skills/**
