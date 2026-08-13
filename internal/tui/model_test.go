@@ -18,7 +18,7 @@ func loadTestSpec(t *testing.T) *openapi.ParsedSpec {
 
 func key(s string) tea.KeyMsg {
 	switch s {
-	case "j", "k", "g", "G", "h", "l", "c", "x", "q", "/",
+	case "j", "k", "g", "G", "h", "l", "c", "x", "q", "/", "[", "?",
 		"t", "e", "i", "d", "m", "p", "r", "y", "n", "Y", "N", "J", "K", "v":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	case "enter":
@@ -27,6 +27,10 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyDown}
 	case "esc":
 		return tea.KeyMsg{Type: tea.KeyEsc}
+	case "tab":
+		return tea.KeyMsg{Type: tea.KeyTab}
+	case "ctrl+r":
+		return tea.KeyMsg{Type: tea.KeyCtrlR}
 	}
 	panic("unhandled key " + s)
 }
@@ -168,6 +172,21 @@ func TestResponseTabCyclingOnlyOnEndpointRows(t *testing.T) {
 	m = step(m, "/")
 	if m.ResponseTab != 1 {
 		t.Errorf("expected response tab to advance to 1, got %d", m.ResponseTab)
+	}
+}
+
+func TestLeftBracketTogglesLeftPanelWidth(t *testing.T) {
+	m := New(loadTestSpec(t), "")
+	if m.LeftExpanded {
+		t.Fatalf("expected LeftExpanded false initially")
+	}
+	m = step(m, "[")
+	if !m.LeftExpanded {
+		t.Errorf("expected LeftExpanded true after '['")
+	}
+	m = step(m, "[")
+	if m.LeftExpanded {
+		t.Errorf("expected LeftExpanded false after second '['")
 	}
 }
 

@@ -55,13 +55,41 @@ func (m Model) View() string {
 		return "loading..."
 	}
 
+	// Matches App.tsx: loading/error replace the entire UI (no
+	// Header/panels/StatusBar), not just the content area.
+	if m.SpecLoading {
+		return lipgloss.NewStyle().Padding(2, 2).Render(cyanStyle.Render("Loading OpenAPI specification..."))
+	}
+	if m.SpecError != "" {
+		errStyle := lipgloss.NewStyle().Foreground(color5xx)
+		return lipgloss.NewStyle().Padding(2, 2).Render(strings.Join([]string{
+			errStyle.Bold(true).Render("Error loading OpenAPI specification"),
+			errStyle.Render(m.SpecError),
+			"",
+			dimStyle.Render("Source: " + m.Source),
+			dimStyle.Render("Press Ctrl+R to retry or q to quit"),
+		}, "\n"))
+	}
+
 	contentHeight := max(m.Height-6, 10)
-	leftWidth := max(m.Width*30/100, 20)
+	leftWidthPct := 30
+	if m.LeftExpanded {
+		leftWidthPct = 50
+	}
+	leftWidth := max(m.Width*leftWidthPct/100, 20)
 	rightWidth := max(m.Width-leftWidth-2, 20)
 
-	left := m.renderLeftPanel(contentHeight, leftWidth)
-	right := m.renderRightPanel(contentHeight, rightWidth)
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	var body string
+	switch {
+	case m.ShowHelp:
+		body = m.renderHelpPopup(contentHeight, m.Width)
+	case m.ShowInfo:
+		body = m.renderInfoPopup(contentHeight, m.Width)
+	default:
+		left := m.renderLeftPanel(contentHeight, leftWidth)
+		right := m.renderRightPanel(contentHeight, rightWidth)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderStatusBar())
 }
@@ -103,21 +131,24 @@ func (m Model) renderHeader() string {
 func (m Model) renderStatusBar() string {
 	staticHints := []hint{{"q", "quit"}, {"i", "info"}, {"?", "help"}, {"Ctrl+r", "reload"}}
 
+	// Matches StatusBar.tsx's getDynamicShortcuts exactly — a curated
+	// subset, not every bound key (e.g. no 'd'/'c'/'x'/'g' here; those
+	// hints live next to the row they act on instead, per that file's own
+	// "avoid duplicating a hint that's already visible" comment).
 	var dynamicHints []hint
 	switch {
 	case m.Mode == ModeTryIt:
 		dynamicHints = []hint{
-			{"j/k", "params"}, {"i", "edit"}, {"d", "disable"},
-			{"m", "method"}, {"p", "path"}, {"e", "execute"}, {"r", "reset"}, {"Esc", "cancel"},
+			{"j/k", "navigate"}, {"i", "edit"}, {"Esc", "done/cancel"},
+			{"e", "execute"}, {"m", "method"}, {"p", "path"}, {"r", "reset"},
 		}
 	case m.ActivePanel == PanelRight:
 		dynamicHints = []hint{
-			{"h/l", "panels"}, {"j/k", "scroll"}, {"g", "top"}, {"/", "next response"},
-			{"t", "try it"}, {"e", "quick execute"},
+			{"h/l", "panels"}, {"j/k", "scroll"}, {"[", "wide"}, {"t", "try it"}, {"m", "manual"},
 		}
 	default:
 		dynamicHints = []hint{
-			{"h/l", "panels"}, {"j/k", "navigate"}, {"Enter", "expand"}, {"c/x", "collapse/expand"}, {"t", "try it"},
+			{"h/l", "panels"}, {"j/k", "navigate"}, {"Enter", "expand tag"}, {"[", "wide"}, {"t", "try it"}, {"m", "manual"},
 		}
 	}
 

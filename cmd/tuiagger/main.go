@@ -97,7 +97,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	model := tui.New(parsed, displayName).WithServices(httpClient(), store)
+	model := tui.New(parsed, displayName).WithServices(httpClient(), store).WithSource(collection.Source)
 	if err := launchTUI(model); err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return 1

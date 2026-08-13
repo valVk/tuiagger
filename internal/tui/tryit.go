@@ -392,7 +392,7 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) []string 
 	if methodModified {
 		header += yellowStyle.Render("*")
 	}
-	header += " "
+	header += dimStyle.Render(" (m)") + " "
 	if m.TryIt.EditingPath {
 		header += m.TryIt.PathInput.View()
 	} else {
@@ -404,6 +404,7 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) []string 
 		if pathModified {
 			header += yellowStyle.Render("*")
 		}
+		header += dimStyle.Render(" (p)")
 	}
 	lines = append(lines, header, "")
 

@@ -75,6 +75,23 @@ type Model struct {
 	HTTPClient request.HTTPClient
 	Store      *storage.Store
 
+	LeftExpanded bool // '[' toggles 30% <-> 50% left panel width, matching App.tsx
+
+	ShowHelp   bool
+	HelpScroll int
+
+	ShowInfo     bool
+	InfoSection  infoSection
+	ServerCursor int
+	AuthCursor   int
+	EnvCursor    int
+
+	// Source is the collection/path/URL the spec was loaded from, kept for
+	// Ctrl+R reload (re-runs openapi.ParseOpenAPISpec against it).
+	Source      string
+	SpecLoading bool
+	SpecError   string
+
 	Width, Height int
 	Quitting      bool
 }
@@ -108,6 +125,12 @@ func (m Model) WithServices(client request.HTTPClient, store *storage.Store) Mod
 	return m
 }
 
+// WithSource records where the spec was loaded from, enabling Ctrl+R reload.
+func (m Model) WithSource(source string) Model {
+	m.Source = source
+	return m
+}
+
 func (m Model) Init() tea.Cmd { return nil }
 
 // responseMsg carries a completed request's result back into Update — the
@@ -115,6 +138,25 @@ func (m Model) Init() tea.Cmd { return nil }
 type responseMsg struct {
 	response *request.Response
 	curl     string
+}
+
+// reloadMsg carries the result of a Ctrl+R reload, matching
+// useOpenAPI.ts's reload(): on success the whole spec is swapped in; on
+// failure the TS app discards its working UI in favor of a full-screen
+// error (App.tsx renders the error branch whenever `error` is set,
+// regardless of whether a previous `spec` still exists) — replicated in
+// View() via SpecError taking priority over everything else.
+type reloadMsg struct {
+	spec *openapi.ParsedSpec
+	err  error
+}
+
+func (m Model) reloadCmd() tea.Cmd {
+	source := m.Source
+	return func() tea.Msg {
+		parsed, err := openapi.ParseOpenAPISpec(source)
+		return reloadMsg{spec: parsed, err: err}
+	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -134,28 +176,91 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case yankExpiredMsg:
 		m.Viewer.Yanked = false
 		return m, nil
+	case reloadMsg:
+		return m.applyReload(msg), nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
 	return m, nil
 }
 
+func (m Model) applyReload(msg reloadMsg) Model {
+	m.SpecLoading = false
+	if msg.err != nil {
+		m.SpecError = msg.err.Error()
+		return m
+	}
+	m.SpecError = ""
+	m.Spec = msg.spec
+	m.AllTags = msg.spec.Tags
+	m.EndpointsByTag = openapi.GetEndpointsByTag(msg.spec.Endpoints)
+	// Preserve which tags were expanded across the reload, same as TS
+	// (usePanelNavigation's expandedTags is untouched by a spec refresh).
+	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.ExpandedTags)
+	m.LeftIndex = m.safeLeftIndex()
+	m.Mode = ModeBrowse
+	m.Response = nil
+	m.Curl = ""
+	m.Loading = false
+	m.RightScroll = 0
+	return m
+}
+
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+
+	// 'q' always quits, even mid-reload or on the full-screen error view —
+	// matches the TS app's onQuit binding staying mounted regardless of
+	// what App.tsx is currently rendering.
+	if key == "q" {
+		m.Quitting = true
+		return m, tea.Quit
+	}
+
+	// A failed reload replaces the whole UI with an error view in TS
+	// (App.tsx: `if (error || !spec) return <ErrorScreen/>`, evaluated
+	// before Header/panels/StatusBar render at all) — only retry (Ctrl+R)
+	// and quit make sense here.
+	if m.SpecError != "" {
+		if key == "ctrl+r" {
+			m.SpecLoading, m.SpecError = true, ""
+			return m, m.reloadCmd()
+		}
+		return m, nil
+	}
+	if m.SpecLoading {
+		return m, nil
+	}
+
+	if m.ShowHelp {
+		return m.handleHelpKey(key)
+	}
+	if m.ShowInfo {
+		return m.handleInfoKey(key)
+	}
 
 	if m.Mode == ModeTryIt {
 		return m.handleTryItKey(msg)
 	}
 
 	switch key {
-	case "q":
-		m.Quitting = true
-		return m, tea.Quit
+	case "ctrl+r":
+		m.SpecLoading = true
+		return m, m.reloadCmd()
+	case "?":
+		m.ShowHelp = true
+		m.HelpScroll = 0
+		return m, nil
+	case "i":
+		return m.enterInfo(), nil
 	case "h", "left":
 		m.ActivePanel = PanelLeft
 		return m, nil
 	case "l", "right":
 		m.ActivePanel = PanelRight
+		return m, nil
+	case "[":
+		m.LeftExpanded = !m.LeftExpanded
 		return m, nil
 	case "t":
 		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
