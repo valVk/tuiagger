@@ -74,10 +74,20 @@ mocking.
    as the TS workflow — it's the shared source of truth for both codebases
    until cutover.
 
+## Dependencies are vendored
+
+`vendor/` is committed — Go auto-uses it (no `-mod=vendor` flag needed) as
+long as it stays consistent with `go.mod`/`go.sum`. **After any `go get` or
+manual `go.mod` edit, run `task vendor`** (tidy + vendor) and stage the
+result before building/testing, or the build will fail with a
+vendor-inconsistency error.
+
 ## Verifying changes
 
-- `go build ./...`, `go vet ./...`, `go test ./...` after every edit round —
-  fast, and (unlike the TS app) actually exercises behavior, not just types.
+- `task check` (fmt-check + vet + test) after every edit round — fast, and
+  (unlike the TS app) actually exercises behavior, not just types. See
+  `Taskfile.yml` at repo root for the full list (`build`, `run`, `test`,
+  `vet`, `fmt`, `vendor`, `clean`); run `task` with no args to list them.
 - Manual smoke test: `go run ./cmd/tuiagger <collection>` against the
   Petstore v3 fixture (`https://petstore3.swagger.io/api/v3/openapi.json`,
   same fixture the TS app and the Phase 0 spike used) — full-screen Bubbletea
