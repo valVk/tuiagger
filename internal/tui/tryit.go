@@ -241,9 +241,11 @@ func toStr(v any) string {
 
 // executeCmd saves the current overrides and runs the request in the
 // background, matching App.tsx's executeCurrentEndpoint. Body editing isn't
-// wired yet (deferred — see HANDOFF.md), so a scaffolded placeholder body
-// is sent automatically for write methods that define a request body, same
-// source (openapi.ScaffoldPlaceholder) the read-only view already renders.
+// wired yet (deferred — see HANDOFF.md), so for write methods that define a
+// request body, a body is auto-filled with realistic random data
+// (openapi.ScaffoldFakeBody, matching scaffoldBody.ts) rather than shown to
+// the user for editing first the way TS's 't' handler does — the value is
+// generated fresh on every execute, not persisted or editable.
 //
 // Shared by try-it-out's 'e' (uses the in-progress edit state) and browse
 // mode's quick-execute 'e' (uses whatever was last saved to disk) — see
@@ -335,7 +337,7 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 		if requestBody != nil && isWriteMethod(effectiveMethod) {
 			for _, mt := range requestBody.Content {
 				if mt.Schema != nil {
-					body = jsonPretty(openapi.ScaffoldPlaceholder(mt.Schema))
+					body = jsonPretty(openapi.ScaffoldFakeBody(mt.Schema))
 				}
 				break
 			}
