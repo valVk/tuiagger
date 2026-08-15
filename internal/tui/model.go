@@ -9,8 +9,6 @@ import (
 	"maps"
 	"sort"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/request"
@@ -32,51 +30,6 @@ const (
 	ModeManual
 	ModeRenameTag
 )
-
-// tryItState holds everything scoped to one endpoint's try-it-out session.
-// It's reset whenever the left-panel selection changes, matching the TS
-// app's selectedItem-change effect in App.tsx.
-type tryItState struct {
-	ParamValues    map[string]string
-	DisabledParams map[string]bool
-	OverridePath   string
-	OverrideMethod string
-
-	ParamCursor  int
-	ParamEditing bool
-
-	// CustomParams backs the PARAMETERS table's always-present "[ + ]" row
-	// — matching ParametersSection.tsx, which appends an `addNew` row
-	// unconditionally in try-it-out mode regardless of whether the
-	// endpoint declares any spec parameters, so the section (and its
-	// hints) never disappears and custom query/path params can always be
-	// added.
-	CustomParams []storage.CustomParameter
-	NewParamIn   string // in-progress type ("query"/"path") for the add-new row
-
-	// HeaderTable backs a second, independent table above PARAMETERS for
-	// CustomParams entries with In=="header" — matches HeadersSection.tsx.
-	// Also supplies the ParamField/NameInput/ValueInput widgets used by
-	// PARAMETERS' own custom/add-new row (and spec-param) editing, since
-	// only one of the two tables can ever be mid-edit at once.
-	HeaderTable headerTableState
-
-	EditingPath bool
-	PathInput   textinput.Model
-
-	// Body mirrors useRightPanelKeyboard.ts's bodyTabFocused/editingBody:
-	// 'j' off the last parameter row (or 'k' back) moves focus onto the
-	// BODY section; 'i' there edits it (auto-scaffolding a placeholder if
-	// still empty, matching the TS quirk where that path uses
-	// scaffoldPlaceholder rather than the faker-driven scaffoldBody
-	// enterTryIt already ran once on entry).
-	Body        string
-	BodyFocused bool
-	EditingBody bool
-	BodyInput   textarea.Model
-
-	ShowResetConfirm bool
-}
 
 type Model struct {
 	Spec           *openapi.ParsedSpec

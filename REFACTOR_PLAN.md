@@ -129,7 +129,7 @@ custom/add-new-row logic moves into the shared component.
 
 Run `task check`.
 
-### [ ] Step 4 — Split each mode into files by responsibility
+### [x] Step 4 — Split each mode into files by responsibility
 
 Once the shared components exist, split the remaining mode-specific code
 by concern, matching the pattern `responseviewer.go` already uses (state +
