@@ -119,8 +119,8 @@ func manualSelectedContentType(tab int) string {
 	return manualContentTypeCycle().Selected(tab)
 }
 
-// indexOfContentType maps a persisted content-type string (SavedRequest's
-// repurposed BodyType field) back to its tab index — mirrors
+// indexOfContentType maps a persisted content-type string
+// (SavedRequest.ContentType) back to its tab index — mirrors
 // selectedContentType's override.ContentType restore in enterTryIt. Old
 // saved requests with the pre-refactor literal "json" value (see
 // saveManualRequest's prior hardcoded writes) don't match any entry here

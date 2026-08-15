@@ -28,7 +28,7 @@ func (m Model) savedRequestExecuteCmd(sr *storage.SavedRequest) tea.Cmd {
 	for _, h := range sr.Headers {
 		params = append(params, storage.CustomParameter{ID: h.ID, Name: h.Key, Value: h.Value, In: "header", Enabled: h.Enabled})
 	}
-	contentType := manualSelectedContentType(indexOfContentType(sr.BodyType))
+	contentType := manualSelectedContentType(indexOfContentType(sr.ContentType))
 	return m.runRequestCmd(sr.Method, sr.Path, params, sr.Body, contentType)
 }
 

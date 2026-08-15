@@ -99,7 +99,7 @@ func (m Model) enterManualEdit(sr *storage.SavedRequest) Model {
 	state.Path = sr.Path
 	state.Method = sr.Method
 	state.Body = sr.Body
-	state.ContentTypeTab = indexOfContentType(sr.BodyType)
+	state.ContentTypeTab = indexOfContentType(sr.ContentType)
 	state.EditingRequest = sr
 	for _, p := range sr.QueryParams {
 		state.Params = append(state.Params, storage.CustomParameter{ID: p.ID, Name: p.Key, Value: p.Value, In: "query", Enabled: p.Enabled})

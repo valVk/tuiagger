@@ -19,7 +19,12 @@ type ManualRequestState struct {
 	QueryParams []KeyValuePair `json:"queryParams"`
 	Headers     []KeyValuePair `json:"headers"`
 	Body        string         `json:"body"`
-	BodyType    string         `json:"bodyType"`
+	// ContentType holds a content-type string (e.g. "application/json",
+	// "application/x-www-form-urlencoded"). The JSON tag stays "bodyType"
+	// — its pre-rename name — so saved-requests.json files written before
+	// this field held content types (see indexOfContentType's doc
+	// comment) still round-trip.
+	ContentType string `json:"bodyType"`
 }
 
 type SavedRequest struct {

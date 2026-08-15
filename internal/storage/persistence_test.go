@@ -122,6 +122,36 @@ func TestSavedRequestsAreAtomicNotJustPlainWrite(t *testing.T) {
 	}
 }
 
+// TestSavedRequestContentTypeRoundTripsThroughLegacyJSONTag is a
+// regression test for the ManualRequestState.BodyType -> ContentType Go
+// field rename: the JSON tag deliberately stays "bodyType" so a
+// saved-requests.json file written before the rename (or by any tool that
+// still emits the old key) still loads its value into the new field
+// instead of silently losing it.
+func TestSavedRequestContentTypeRoundTripsThroughLegacyJSONTag(t *testing.T) {
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, storageDirName)
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyJSON := `{"version":"1.0","requests":[{"id":"1","name":"req","tag":"default","method":"POST","path":"/pet","bodyType":"application/xml"}],"customTags":[]}`
+	if err := os.WriteFile(filepath.Join(storeDir, savedRequestsFile), []byte(legacyJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := NewStore("", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := s.LoadSavedRequests().Requests
+	if len(requests) != 1 {
+		t.Fatalf("expected one request loaded, got %d", len(requests))
+	}
+	if requests[0].ContentType != "application/xml" {
+		t.Errorf("expected the legacy \"bodyType\" key to populate ContentType, got %q", requests[0].ContentType)
+	}
+}
+
 func TestSavedRequestsCRUD(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewStore("", dir)
