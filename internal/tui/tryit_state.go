@@ -63,6 +63,14 @@ type tryItState struct {
 	BodyFocused bool
 	EditingBody bool
 	BodyInput   textarea.Model
+	// BodyScrollFloor is RightScroll's value at the moment BODY was
+	// focused — 'k'/'up' while focused scrolls back up as long as
+	// RightScroll is still above this floor (undoing 'j' presses that
+	// scrolled past the box), and only unfocuses back to PARAMETERS once
+	// it's reached, so scrolling up mirrors scrolling down instead of
+	// jumping straight back to PARAMETERS from wherever the user scrolled
+	// to.
+	BodyScrollFloor int
 
 	ShowResetConfirm bool
 }

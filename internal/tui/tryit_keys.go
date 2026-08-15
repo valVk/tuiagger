@@ -135,6 +135,7 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.TryIt.ParamCursor++
 		} else if m.tryItHasBodySection(ep) {
 			m.TryIt.BodyFocused = true
+			m.TryIt.BodyScrollFloor = m.RightScroll
 		}
 		return m, nil
 	case "k", "up":
@@ -322,6 +323,14 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.TryIt.BodyInput.Focus()
 		return m, nil
 	case "k", "up":
+		// Mirrors "j"/"down" below: scroll back up first if the user
+		// scrolled past the box, only unfocusing back to PARAMETERS once
+		// back at the position BODY was originally focused from — see
+		// BodyScrollFloor's doc comment.
+		if m.RightScroll > m.TryIt.BodyScrollFloor {
+			m.RightScroll--
+			return m, nil
+		}
 		m.TryIt.BodyFocused = false
 		return m, nil
 	case "j", "down":
