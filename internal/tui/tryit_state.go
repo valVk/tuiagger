@@ -19,6 +19,13 @@ import (
 // It's reset whenever the left-panel selection changes, matching the TS
 // app's selectedItem-change effect in App.tsx.
 type tryItState struct {
+	// Endpoint is captured once by enterTryIt — the component's own copy
+	// of which endpoint this session is for, so Update (handleTryItKey)
+	// doesn't need to re-derive it from the root's left-panel selection on
+	// every keystroke. Safe: left-panel navigation is unreachable while
+	// Mode == ModeTryIt, so the selection can't change mid-session.
+	Endpoint *openapi.ParsedEndpoint
+
 	ParamValues    map[string]string
 	DisabledParams map[string]bool
 	OverridePath   string
@@ -75,6 +82,7 @@ func (m Model) enterTryIt() Model {
 	ep := item.Endpoint
 
 	state := tryItState{
+		Endpoint:       ep,
 		ParamValues:    map[string]string{},
 		DisabledParams: map[string]bool{},
 	}
@@ -155,8 +163,7 @@ func applicationJSONSchema(content map[string]openapi.MediaType) *openapi.Schema
 // for every other case (an untouched write-method endpoint's auto-scaffolded
 // Body is never empty, so it still gets saved as before).
 func (m Model) exitTryIt() Model {
-	if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint && m.Store != nil {
-		ep := item.Endpoint
+	if ep := m.TryIt.Endpoint; ep != nil && m.Store != nil {
 		override := storage.EndpointOverride{
 			Params:         m.TryIt.ParamValues,
 			CustomParams:   m.TryIt.CustomParams,

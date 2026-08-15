@@ -127,11 +127,21 @@ in the final stage — same pattern as last time.
       `headerTableState`'s convention) for the Model-owned side effects
       (closing the popup, persisting via `Store`) the component can't do
       itself.
-- [ ] Stage 4 — TryIt/Manual facades. Add `Init`/`Update`/`View` wrapping
-      the existing `handleTryItKey`/`renderTryItLines`/etc. TryIt's `Init`
-      snapshots the selected endpoint into its own state (new field on
-      `tryItState`) instead of `Update` re-deriving it via
-      `m.selectedItem()` each keystroke.
+- [x] Stage 4 — TryIt/Manual. Added `tryItState.Endpoint`, captured once
+      by `enterTryIt`; `handleTryItKey`/`exitTryIt`/`handleBodyFocusedKey`
+      now read `m.TryIt.Endpoint` instead of re-deriving it via
+      `m.selectedItem()` on every keystroke (safe: left-panel navigation
+      is unreachable while `Mode == ModeTryIt`, so the selection can't
+      change mid-session). No literal `Init`/`Update`/`View` renames on
+      `handleTryItKey`/`renderTryItLines`: they're already Mode-dispatch
+      entry points called from `Model.Update`/`Model.View`, the same
+      shape `handleInfoKey`/`renderInfoPopup` kept in Stage 2 rather than
+      being renamed — the real component boundary in this codebase is
+      "does the root call it as `m.X.Update(...)` on an independent
+      value" (ResponseViewer, HelpPopup, SaveDialog, RenameTag, the info
+      popup's 3 panels), not every Mode branch. Manual needed no
+      changes — already self-contained, no left-panel dependency to
+      remove.
 - [ ] Stage 5 — LeftPanel extraction: `handleLeftPanelKey` + the
       left-panel render slice of view.go + `flatlist.go`'s data become one
       component.

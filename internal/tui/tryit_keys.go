@@ -9,13 +9,18 @@ import (
 	"github.com/valVK/tuiagger/internal/storage"
 )
 
+// handleTryItKey is TryIt's Update — ep comes from the endpoint snapshot
+// enterTryIt captured on entry (m.TryIt.Endpoint), not a fresh
+// m.selectedItem() lookup on every keystroke: left-panel navigation is
+// unreachable while Mode == ModeTryIt (this handler owns every key until
+// Esc), so the selection can't change out from under an in-progress
+// session.
 func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	item := m.selectedItem()
-	if item == nil || item.Type != ItemEndpoint {
+	ep := m.TryIt.Endpoint
+	if ep == nil {
 		return m.exitTryIt(), nil
 	}
-	ep := item.Endpoint
 	params := sortedParameters(ep.Operation.Parameters)
 	headerParams, custom := splitCustomParams(m.TryIt.CustomParams)
 	totalRows := tryItTotalRows(params, custom)
@@ -302,10 +307,11 @@ func (m Model) tryItHasBodySection(ep *openapi.ParsedEndpoint) bool {
 // handleBodyFocusedKey matches useRightPanelKeyboard.ts's bodyTabFocused
 // branch.
 func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	ep := m.TryIt.Endpoint
 	switch msg.String() {
 	case "i":
-		if item := m.selectedItem(); m.TryIt.Body == "" && item != nil && item.Type == ItemEndpoint && item.Endpoint.Operation.RequestBody != nil {
-			if schema := applicationJSONSchema(item.Endpoint.Operation.RequestBody.Content); schema != nil {
+		if m.TryIt.Body == "" && ep != nil && ep.Operation.RequestBody != nil {
+			if schema := applicationJSONSchema(ep.Operation.RequestBody.Content); schema != nil {
 				if scaffolded := openapi.ScaffoldPlaceholder(schema); scaffolded != nil {
 					m.TryIt.Body = jsonPretty(scaffolded)
 				}
@@ -324,8 +330,8 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// branch and only checks rightPanelNormalMode (unaffected by body
 		// focus), so execute still works here — unlike 'm'/'p'/'r', which
 		// are local to the focused hook and correctly swallowed below.
-		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
-			cmd := m.executeCmd(item.Endpoint)
+		if ep != nil {
+			cmd := m.executeCmd(ep)
 			m.Loading = true
 			return m, cmd
 		}
