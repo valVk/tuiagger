@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -197,6 +200,44 @@ func applicationJSONSchema(content map[string]openapi.MediaType) *openapi.Schema
 	return nil
 }
 
+// selectedSchema looks up the schema for whichever content type is
+// currently selected — the multi-content-type-aware replacement for
+// applicationJSONSchema's hardcoded "application/json"-only lookup above
+// (kept temporarily; callers migrate to this one in the next layer of
+// this feature).
+func selectedSchema(content map[string]openapi.MediaType, contentType string) *openapi.Schema {
+	if mt, ok := content[contentType]; ok {
+		return mt.Schema
+	}
+	return nil
+}
+
+// unsupportedContentTypes are declared-but-not-yet-encodable request body
+// formats, filtered out of sortedContentTypes below so selecting one can't
+// silently produce an empty/wrong body: multipart/form-data needs a
+// file-attach UI and a generated boundary (deliberately deferred, see
+// CLAUDE.md's Out of Scope — "File uploads / FormData"); application/
+// octet-stream is raw binary, not something a schema-driven scaffolder can
+// represent at all.
+var unsupportedContentTypes = map[string]bool{
+	"multipart/form-data":      true,
+	"application/octet-stream": true,
+}
+
+// sortedContentTypes matches sortedResponseCodes' shape (browse.go): the
+// declared content-type keys, sorted for deterministic cycling, minus
+// formats this app can't yet encode.
+func sortedContentTypes(content map[string]openapi.MediaType) []string {
+	var types []string
+	for ct := range content {
+		if !unsupportedContentTypes[ct] {
+			types = append(types, ct)
+		}
+	}
+	sort.Strings(types)
+	return types
+}
+
 // exitTryIt persists the in-progress edit (params, disabled set, body,
 // path/method overrides) before returning to browse mode, matching
 // App.tsx's Esc handler — TS saves on Esc exit, not just on execute, so
@@ -343,6 +384,101 @@ func jsonPretty(v any) string {
 		return ""
 	}
 	return string(b)
+}
+
+// encodeBody serializes a scaffolded value tree (whatever
+// ScaffoldFakeBody/ScaffoldPlaceholder produced — map[string]any/[]any/
+// string/int/bool/nil, not JSON-specific) per contentType. The single
+// dispatcher every scaffold call site uses, so adding support for another
+// format later is one new case here, not editing every call site.
+func encodeBody(contentType string, v any) string {
+	switch contentType {
+	case "application/x-www-form-urlencoded":
+		return encodeFormURLEncoded(v)
+	case "application/xml", "text/xml":
+		return encodeXML(v, "root")
+	default:
+		return jsonPretty(v)
+	}
+}
+
+// encodeFormURLEncoded serializes a scaffolded value tree as
+// application/x-www-form-urlencoded — only top-level object keys become
+// form fields (the format has no natural nested-object encoding); a
+// nested object/array value falls back to being JSON-encoded into that
+// one field rather than silently dropped or expanded into bracket
+// notation nobody asked for. Built on the same net/url.Values{}.Encode()
+// primitive urlbuilder.go's BuildRequestURL already uses for query
+// strings — no new dependency.
+func encodeFormURLEncoded(v any) string {
+	obj, ok := v.(map[string]any)
+	if !ok {
+		// Not an object at the top level (e.g. a bare array/scalar
+		// schema) — nothing sensible to key form fields by.
+		return url.Values{"value": {formFieldValue(v)}}.Encode()
+	}
+	values := url.Values{}
+	for _, k := range sortedAnyKeys(obj) {
+		values.Set(k, formFieldValue(obj[k]))
+	}
+	return values.Encode()
+}
+
+func formFieldValue(v any) string {
+	switch v.(type) {
+	case map[string]any, []any:
+		return jsonPretty(v)
+	default:
+		return toStr(v)
+	}
+}
+
+// encodeXML serializes a scaffolded value tree as XML, recursively:
+// object -> nested <key>...</key> per property (sorted for deterministic
+// output, same reason jsonPretty's json.MarshalIndent sorts map keys —
+// plain Go map iteration isn't ordered), array -> one repeated tag per
+// item, primitive -> escaped text content. root names the top-level
+// element since Schema carries no name of its own for a request body.
+func encodeXML(v any, root string) string {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0"?>` + "\n")
+	writeXMLElement(&b, root, v, 0)
+	return b.String()
+}
+
+func writeXMLElement(b *strings.Builder, name string, v any, indent int) {
+	pad := strings.Repeat("  ", indent)
+	switch t := v.(type) {
+	case map[string]any:
+		b.WriteString(pad + "<" + name + ">\n")
+		for _, k := range sortedAnyKeys(t) {
+			writeXMLElement(b, k, t[k], indent+1)
+		}
+		b.WriteString(pad + "</" + name + ">\n")
+	case []any:
+		for _, item := range t {
+			writeXMLElement(b, name, item, indent)
+		}
+	default:
+		b.WriteString(pad + "<" + name + ">" + xmlEscape(toStr(t)) + "</" + name + ">\n")
+	}
+}
+
+func xmlEscape(s string) string {
+	var buf bytes.Buffer
+	if err := xml.EscapeText(&buf, []byte(s)); err != nil {
+		return s
+	}
+	return buf.String()
+}
+
+func sortedAnyKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func disabledSlice(m map[string]bool) []string {
