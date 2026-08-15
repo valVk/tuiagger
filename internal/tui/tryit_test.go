@@ -681,6 +681,45 @@ func TestKAtFirstParamRowEntersHeadersFocus(t *testing.T) {
 	}
 }
 
+// TestParamsRowNotHighlightedWhileHeadersFocused is a regression test: a
+// user reported PARAMETERS looking "always active" — its first row stayed
+// visually selected (and, worse, kept stealing the auto-scroll cursorLine
+// from HEADERS) even after focus moved up into HEADERS. renderTryItLines
+// never gated PARAMETERS' `selected`/cursorLine on HeaderTable.Focused, only
+// on BodyFocused — manual_render.go's paramsActive already did this
+// correctly for the manual builder; renderTryItLines just hadn't picked up
+// the same convention.
+func TestParamsRowNotHighlightedWhileHeadersFocused(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = step(m, "t", "k") // enter try-it, focus HEADERS
+	if !m.TryIt.HeaderTable.Focused {
+		t.Fatalf("setup: expected HEADERS focused")
+	}
+	if m.TryIt.ParamCursor != 0 {
+		t.Fatalf("setup: expected ParamCursor still at 0, got %d", m.TryIt.ParamCursor)
+	}
+
+	lines, cursorLine := m.renderTryItLines(m.TryIt.Endpoint, 100)
+	if cursorLine < 0 || cursorLine >= len(lines) {
+		t.Fatalf("expected a valid cursorLine, got %d (len %d)", cursorLine, len(lines))
+	}
+	// The auto-scroll target must be inside the HEADERS block (before the
+	// "PARAMETERS" heading), not row 0 of the PARAMETERS table.
+	headingIdx := -1
+	for i, l := range lines {
+		if strings.HasPrefix(stripANSI(l), "PARAMETERS") {
+			headingIdx = i
+			break
+		}
+	}
+	if headingIdx < 0 {
+		t.Fatalf("expected a PARAMETERS heading in the rendered lines")
+	}
+	if cursorLine >= headingIdx {
+		t.Errorf("expected cursorLine to stay within HEADERS (before line %d), got %d: %q", headingIdx, cursorLine, stripANSI(lines[cursorLine]))
+	}
+}
+
 // TestAddHeaderViaHeadersSection exercises the full add-header flow: enter
 // HEADERS focus, 'i' to start adding, type a name, Tab to the value field,
 // type a value, Enter to commit — matches useHeadersNavigation.ts's

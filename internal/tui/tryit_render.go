@@ -196,14 +196,21 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) ([]string
 	lines = append(lines, "", boldStyle.Render("PARAMETERS")+dimStyle.Render(" j/k: move | i: edit | d: toggle | x: del | c: type"))
 	lines = append(lines, paramTableHeader())
 	lines = append(lines, dimStyle.Render(strings.Repeat("─", width)))
+	// paramsActive matches manual_render.go's own paramsActive gate — a
+	// PARAMETERS row shouldn't show as selected while HEADERS or BODY
+	// currently owns focus, the same as HEADERS' own renderHeadersSection
+	// requires `focused` before highlighting a row (found via a user
+	// report that PARAMETERS looked "always active" regardless of which
+	// section was actually focused).
+	paramsActive := !m.TryIt.HeaderTable.Focused && !m.TryIt.BodyFocused
 	for i, p := range params {
-		selected := i == m.TryIt.ParamCursor
+		selected := paramsActive && i == m.TryIt.ParamCursor
 		editing := selected && m.TryIt.ParamEditing
 		editingView := ""
 		if editing {
 			editingView = m.TryIt.HeaderTable.ValueInput.View()
 		}
-		if selected && !m.TryIt.BodyFocused {
+		if selected {
 			cursorLine = len(lines)
 		}
 		lines = append(lines, renderParamRow(paramRowState{
@@ -213,16 +220,16 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) ([]string
 	}
 	for i, p := range custom {
 		rowIndex := len(params) + i
-		selected := rowIndex == m.TryIt.ParamCursor
+		selected := paramsActive && rowIndex == m.TryIt.ParamCursor
 		editing := selected && m.TryIt.ParamEditing
-		if selected && !m.TryIt.BodyFocused {
+		if selected {
 			cursorLine = len(lines)
 		}
 		lines = append(lines, renderCustomParamRow(p, selected, editing, widgets))
 	}
 	addRowIndex := len(params) + len(custom)
-	addSelected := addRowIndex == m.TryIt.ParamCursor
-	if addSelected && !m.TryIt.BodyFocused {
+	addSelected := paramsActive && addRowIndex == m.TryIt.ParamCursor
+	if addSelected {
 		cursorLine = len(lines)
 	}
 	lines = append(lines, renderAddParamRow(addSelected, addSelected && m.TryIt.ParamEditing, widgets))
