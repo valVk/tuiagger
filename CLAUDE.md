@@ -31,16 +31,32 @@ tuiagger/
 │       └── main.go                    # Entry point, CLI argument handling
 ├── internal/
 │   ├── tui/
-│   │   ├── model.go                   # Root Model, Update, key routing
-│   │   ├── view.go                    # Root View, two-panel layout render
-│   │   ├── flatlist.go                # Left panel tag/endpoint flattening
-│   │   ├── tryit.go                   # Try-it-out mode state and keys
-│   │   ├── manual.go                  # Manual request builder
+│   │   ├── model.go                   # Root Model, Update, chrome guards + Mode dispatch
+│   │   ├── view.go                    # Root View, two-panel layout, shared render helpers
+│   │   ├── colors.go                  # HTTP method / status color mapping
+│   │   ├── jsoncolor.go               # Hand-rolled JSON/schema-outline syntax highlighting
+│   │   ├── flatlist.go                # Left-panel tag/endpoint/saved-request data model
+│   │   ├── leftpanel.go               # Left panel: key handling + render
+│   │   ├── browse.go                  # Browse mode: key handling + render
+│   │   ├── tryit_state.go             # Try-it-out: state struct, enter/exit, small helpers
+│   │   ├── tryit_keys.go              # Try-it-out: key handling
+│   │   ├── tryit_render.go            # Try-it-out: rendering
+│   │   ├── tryit_execute.go           # Try-it-out: request execution
+│   │   ├── manual_state.go            # Manual builder: state struct, enter/exit
+│   │   ├── manual_keys.go             # Manual builder: key handling
+│   │   ├── manual_render.go           # Manual builder: rendering
+│   │   ├── manual_execute.go          # Manual builder: request execution
+│   │   ├── execute.go                 # buildRequestSpec — shared by tryit/manual execute
+│   │   ├── headertable.go             # Shared HEADERS table sub-widget (tryit + manual)
+│   │   ├── paramtable.go              # Shared custom/add-new PARAMETERS row sub-widget
 │   │   ├── responseviewer.go          # Response body + curl viewer (visual select/yank)
-│   │   ├── infopopup.go               # Info overlay (servers / auth / environments)
+│   │   ├── infopopup.go               # Info popup: thin parent, section dispatch
+│   │   ├── infopopup_servers.go       # Info popup: SERVERS section
+│   │   ├── infopopup_auth.go          # Info popup: AUTH section
+│   │   ├── infopopup_env.go           # Info popup: ENVIRONMENTS section
 │   │   ├── savedialog.go              # Save dialog for manual requests
-│   │   ├── help.go                    # Interactive keyboard shortcut cheatsheet
-│   │   └── colors.go                  # HTTP method color mapping
+│   │   ├── renametag.go               # Rename-tag overlay
+│   │   └── help.go                    # Interactive keyboard shortcut cheatsheet
 │   ├── openapi/
 │   │   ├── parser.go                  # OpenAPI spec loading/parsing (libopenapi)
 │   │   ├── schema.go                  # Schema traversal helpers
@@ -58,6 +74,8 @@ tuiagger/
 │       ├── collection.go              # Collection name -> spec path resolution
 │       ├── persistence.go             # Atomic file I/O for all stored data
 │       └── types.go                   # Override/saved-request/auth/env types
+├── scripts/
+│   └── smoke_test.py                  # Unattended pty-driven smoke test (task smoke-auto)
 ├── go.mod
 └── CLAUDE.md
 ```
