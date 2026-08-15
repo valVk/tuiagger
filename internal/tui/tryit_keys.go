@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/valVK/tuiagger/internal/bodyformat"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/storage"
 )
@@ -314,11 +313,7 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		if m.TryIt.Body == "" && ep != nil && ep.Operation.RequestBody != nil {
 			contentType := selectedContentType(ep, m.TryIt.ContentTypeTab)
-			if schema := selectedSchema(ep.Operation.RequestBody.Content, contentType); schema != nil {
-				if scaffolded := openapi.ScaffoldPlaceholder(schema); scaffolded != nil {
-					m.TryIt.Body = bodyformat.Encode(contentType, scaffolded)
-				}
-			}
+			m.TryIt.Body = scaffoldFor(ep.Operation.RequestBody.Content, contentType, false)
 		}
 		m.TryIt.EditingBody = true
 		m.TryIt.BodyInput = setBodyValue(m.TryIt.BodyInput, m.TryIt.Body)
@@ -344,10 +339,8 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// there's no schema-agnostic way to reinterpret hand-typed
 				// text from one format as another.
 				contentType := types[m.TryIt.ContentTypeTab]
-				if schema := selectedSchema(ep.Operation.RequestBody.Content, contentType); schema != nil {
-					if scaffolded := openapi.ScaffoldFakeBody(schema); scaffolded != nil {
-						m.TryIt.Body = bodyformat.Encode(contentType, scaffolded)
-					}
+				if body := scaffoldFor(ep.Operation.RequestBody.Content, contentType, true); body != "" {
+					m.TryIt.Body = body
 				}
 			}
 		}

@@ -20,6 +20,27 @@ func TestSelectedSchemaLooksUpExplicitContentType(t *testing.T) {
 	}
 }
 
+func TestScaffoldForFakeVsPlaceholder(t *testing.T) {
+	content := map[string]openapi.MediaType{
+		"application/json": {Schema: &openapi.Schema{
+			Type:       []string{"object"},
+			Properties: []openapi.Property{{Name: "name", Schema: &openapi.Schema{Type: []string{"string"}}}},
+		}},
+	}
+	fake := scaffoldFor(content, "application/json", true)
+	placeholder := scaffoldFor(content, "application/json", false)
+	if fake == "" || placeholder == "" {
+		t.Fatalf("expected both scaffold kinds to produce a body, got fake=%q placeholder=%q", fake, placeholder)
+	}
+}
+
+func TestScaffoldForEmptyWithoutASchema(t *testing.T) {
+	content := map[string]openapi.MediaType{"application/json": {Schema: &openapi.Schema{Type: []string{"object"}}}}
+	if got := scaffoldFor(content, "application/xml", true); got != "" {
+		t.Errorf("expected \"\" for an undeclared content type, got %q", got)
+	}
+}
+
 func TestSortedContentTypesFiltersUnsupportedAndSorts(t *testing.T) {
 	content := map[string]openapi.MediaType{
 		"application/json":                  {},

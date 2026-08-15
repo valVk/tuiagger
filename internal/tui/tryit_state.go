@@ -132,11 +132,7 @@ func (m Model) enterTryIt() Model {
 	// nothing there already (a saved override's body always wins).
 	if state.Body == "" && ep.Operation.RequestBody != nil {
 		contentType := selectedContentType(ep, state.ContentTypeTab)
-		if schema := selectedSchema(ep.Operation.RequestBody.Content, contentType); schema != nil {
-			if scaffolded := openapi.ScaffoldFakeBody(schema); scaffolded != nil {
-				state.Body = bodyformat.Encode(contentType, scaffolded)
-			}
-		}
+		state.Body = scaffoldFor(ep.Operation.RequestBody.Content, contentType, true)
 	}
 	state.HeaderTable.ValueInput = textinput.New()
 	state.HeaderTable.NameInput = textinput.New()
@@ -215,6 +211,34 @@ func selectedSchema(content map[string]openapi.MediaType, contentType string) *o
 		return mt.Schema
 	}
 	return nil
+}
+
+// scaffoldFor generates and encodes a body for contentType against
+// content's declared schema, or "" if there's no schema for that type or
+// scaffolding produces nothing. fake picks openapi.ScaffoldFakeBody
+// (realistic generated data — auto-fill on entering try-it-out, and the
+// fallback at execute time) vs openapi.ScaffoldPlaceholder (schema-shaped
+// placeholder values — the empty-body preview, and starting an edit with
+// nothing typed yet). Every scaffold call site threads the same
+// resolve-schema -> scaffold -> encode sequence through here, so a future
+// change to that sequence (e.g. a new fallback) touches one place instead
+// of being applied by hand at each of the five call sites that used to
+// repeat it, with nothing enforcing they stayed in sync.
+func scaffoldFor(content map[string]openapi.MediaType, contentType string, fake bool) string {
+	schema := selectedSchema(content, contentType)
+	if schema == nil {
+		return ""
+	}
+	var scaffolded any
+	if fake {
+		scaffolded = openapi.ScaffoldFakeBody(schema)
+	} else {
+		scaffolded = openapi.ScaffoldPlaceholder(schema)
+	}
+	if scaffolded == nil {
+		return ""
+	}
+	return bodyformat.Encode(contentType, scaffolded)
 }
 
 // unsupportedContentTypes are declared-but-not-yet-encodable request body
