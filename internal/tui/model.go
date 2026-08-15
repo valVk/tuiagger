@@ -284,144 +284,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleInfoKey(msg)
 	}
 
-	if m.Mode == ModeManual {
+	// Every other mode has its own Update entry point; browse (the
+	// default/fallthrough Mode) has handleBrowseKey in browse.go —
+	// everything past this dispatch used to live inline here, unreachable
+	// once any of the cases above already returned.
+	switch m.Mode {
+	case ModeManual:
 		return m.handleManualKey(msg)
-	}
-	if m.Mode == ModeRenameTag {
+	case ModeRenameTag:
 		return m.handleRenameTagKey(msg)
-	}
-	if m.Mode == ModeTryIt {
+	case ModeTryIt:
 		return m.handleTryItKey(msg)
+	default:
+		return m.handleBrowseKey(msg)
 	}
-
-	// Matches useAppKeyboard.ts's tagDeleteConfirm intercept: takes over
-	// input entirely (browse mode only) until y/n/Esc resolves it.
-	if m.TagDeleteConfirm != "" {
-		switch key {
-		case "y":
-			if m.Store != nil {
-				m.Store.DeleteCustomTag(m.TagDeleteConfirm)
-			}
-			m.TagDeleteConfirm = ""
-			return m.refreshSavedRequests(), nil
-		case "n", "esc":
-			m.TagDeleteConfirm = ""
-			return m, nil
-		}
-		return m, nil
-	}
-
-	// R/D on a custom tag, E/D on a saved request, and 'e' quick-execute all
-	// work regardless of which panel is active, matching
-	// useAppKeyboard.ts's browse-mode handler (checked ahead of h/l/j/k
-	// navigation) — 'e' in particular is bound in a useInput with
-	// isActive: mode === 'browse' only, no panel check, so it must work
-	// from the left panel too, not just after pressing 'l' first.
-	if item := m.selectedItem(); item != nil {
-		switch {
-		case key == "R" && item.Type == ItemTag && m.isCustomTag(item.TagName):
-			return m.enterRenameTag(item.TagName), nil
-		case key == "D" && item.Type == ItemTag && m.isCustomTag(item.TagName):
-			m.TagDeleteConfirm = item.TagName
-			return m, nil
-		case key == "E" && item.Type == ItemSavedRequest:
-			return m.enterManualEdit(item.SavedRequest), nil
-		case key == "D" && item.Type == ItemSavedRequest:
-			if m.Store != nil {
-				m.Store.DeleteSavedRequest(item.SavedRequest.ID)
-			}
-			return m.refreshSavedRequests(), nil
-		case key == "e" && item.Type == ItemEndpoint:
-			cmd := m.quickExecuteCmd(item.Endpoint)
-			m.Loading = true
-			return m, cmd
-		case key == "e" && item.Type == ItemSavedRequest:
-			cmd := m.savedRequestExecuteCmd(item.SavedRequest)
-			m.Loading = true
-			return m, cmd
-		}
-	}
-
-	switch key {
-	case "ctrl+r":
-		m.SpecLoading = true
-		return m, m.reloadCmd()
-	case "?":
-		m.ShowHelp = true
-		m.Help = helpPopupState{}
-		return m, nil
-	case "i":
-		return m.enterInfo(), nil
-	case "h", "left":
-		m.ActivePanel = PanelLeft
-		return m, nil
-	case "l", "right":
-		m.ActivePanel = PanelRight
-		return m, nil
-	case "[":
-		m.LeftExpanded = !m.LeftExpanded
-		return m, nil
-	case "t":
-		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
-			return m.enterTryIt(), nil
-		}
-		return m, nil
-	case "m":
-		return m.enterManualNew(), nil
-	}
-
-	if m.ActivePanel == PanelLeft {
-		return m.handleLeftPanelKey(key)
-	}
-
-	// Response-viewer keys (J/K/G/v/y/Esc/\) take priority over generic
-	// scroll (j/k/g) when a response is present — distinct key casing means
-	// both coexist without a mode flag, matching the TS app. Lowercase 'g'
-	// is bound by both ResponseViewer.tsx (jump response cursor to top) and
-	// usePanelNavigation.ts (reset panel scroll) as two independent Ink
-	// input handlers that both fire on the same keypress — replicated here
-	// by routing to the viewer and then still falling through to the
-	// generic handler below, rather than picking one.
-	if m.Viewer.Response != nil {
-		switch key {
-		case "J", "K", "G", "v", "y", "esc", `\`:
-			var cmd tea.Cmd
-			m.Viewer, cmd = m.Viewer.handleKey(key)
-			return m, cmd
-		case "C":
-			// Go-only addition, not a TS port — yanks the generated curl
-			// command to the clipboard, independent of tab/selection state.
-			if m.Viewer.Curl != "" {
-				var cmd tea.Cmd
-				m.Viewer, cmd = m.Viewer.yankCurl(m.Viewer.Curl)
-				return m, cmd
-			}
-		case "j", "k":
-			// While actively visual-selecting, lowercase j/k also drive the
-			// response cursor instead of the outer panel scroll — found via
-			// a user report: without this, pressing 'v' then reaching for
-			// the muscle-memory 'j'/'k' (rather than the shifted 'J'/'K'
-			// the hint text actually asks for) just scrolls the panel out
-			// from under the selection, which looks exactly like "can't
-			// expand the selection, it just moves the viewport." Only
-			// active during a selection — outside of one, lowercase j/k
-			// keeps its normal job of reaching content that might be
-			// scrolled out of view above the response section.
-			if m.Viewer.Selecting {
-				viewerKey := "J"
-				if key == "k" {
-					viewerKey = "K"
-				}
-				var cmd tea.Cmd
-				m.Viewer, cmd = m.Viewer.handleKey(viewerKey)
-				return m, cmd
-			}
-		case "g":
-			m.Viewer, _ = m.Viewer.handleKey(key)
-		}
-	}
-
-	return m.handleRightPanelKey(key)
 }
 
 // scrollToResponse computes the right-panel scroll offset that brings the

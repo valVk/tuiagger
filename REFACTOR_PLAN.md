@@ -161,11 +161,18 @@ in the final stage — same pattern as last time.
       view.go as shared panel infrastructure, same reasoning as keeping
       `paramEditWidgets`/`renderCustomParamRow` shared rather than
       duplicated per mode.
-- [ ] Stage 7 — Root Model becomes a thin dispatcher. `Update`/`View`
-      shrink to chrome guards + component dispatch; delete now-dead
-      bespoke `handleXKey`/`renderXLines` wrapper functions in
-      model.go/view.go that the facades superseded. Delete
-      `REFACTOR_PLAN.md` in this final commit.
+- [x] Stage 7 — Root Model becomes a thin dispatcher. `handleKey` no
+      longer inlines browse mode's own logic (tagDeleteConfirm intercept,
+      item actions, response-viewer key gating, plain scroll/tab-cycle) —
+      that whole block moved into browse.go as `handleBrowseKey`, the
+      counterpart `handleManualKey`/`handleRenameTagKey`/`handleTryItKey`
+      already had. `handleKey` is now: quit guard, reload-error/loading
+      guards, help/info overlay checks, then a `Mode` switch to whichever
+      mode's own `Update`. `View()` was already this shape (a `switch`
+      dispatching to each component's `View`/render entry point) since
+      each stage removed its own duplicates as it went — no dead code
+      left to delete. `model.go`: 612 -> 367 lines from Stage 5 onward.
+      `REFACTOR_PLAN.md` deleted in this final commit.
 
 ## Verification
 
