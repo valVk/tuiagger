@@ -332,6 +332,22 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			types := sortedContentTypes(ep.Operation.RequestBody.Content)
 			if len(types) > 1 {
 				m.TryIt.ContentTypeTab = (m.TryIt.ContentTypeTab + 1) % len(types)
+				// Re-scaffold for the newly selected type — without this,
+				// the Content-Type header sent on execute (which follows
+				// ContentTypeTab) stops matching the body text (which
+				// still holds whatever the previous type encoded), e.g.
+				// switching to XML while a JSON body sits in the box
+				// sends "Content-Type: application/xml" with a JSON
+				// payload. Discards a hand-edit in progress, same as
+				// switching content types inherently invalidates it —
+				// there's no schema-agnostic way to reinterpret hand-typed
+				// text from one format as another.
+				contentType := types[m.TryIt.ContentTypeTab]
+				if schema := selectedSchema(ep.Operation.RequestBody.Content, contentType); schema != nil {
+					if scaffolded := openapi.ScaffoldFakeBody(schema); scaffolded != nil {
+						m.TryIt.Body = encodeBody(contentType, scaffolded)
+					}
+				}
 			}
 		}
 		return m, nil

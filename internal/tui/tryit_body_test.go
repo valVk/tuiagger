@@ -205,10 +205,6 @@ func TestBodyFocusCCyclesContentTypeAndRescaffolds(t *testing.T) {
 	m := endpointWithMultiContentTypeBodyModel(t)
 	m = m.WithServices(nil, newTestStore(t))
 	m = step(m, "t")
-	// enterTryIt already auto-scaffolds a body for tab 0; clear it so 'c'
-	// (which only rescaffolds while Body == "") shows an observable change,
-	// same setup shape as handleBodyFocusedKey's 'i' case.
-	m.TryIt.Body = ""
 	ep := m.TryIt.Endpoint
 	types := sortedContentTypes(ep.Operation.RequestBody.Content)
 
@@ -216,21 +212,30 @@ func TestBodyFocusCCyclesContentTypeAndRescaffolds(t *testing.T) {
 	if m.TryIt.ContentTypeTab != 0 {
 		t.Fatalf("expected to start on tab 0, got %d", m.TryIt.ContentTypeTab)
 	}
+
+	// Regression test: enterTryIt auto-scaffolds a JSON body for tab 0's
+	// default. Cycling 'c' must re-encode that body for the newly selected
+	// type, not just flip ContentTypeTab (which alone drives the
+	// Content-Type header on execute) — otherwise a user cycling to XML
+	// still has the tab-0 JSON text sitting in the box, so the request
+	// sent is "Content-Type: application/xml" with a JSON payload, a real
+	// bug found via a user report showing exactly that curl output.
+	if m.TryIt.Body == "" {
+		t.Fatalf("setup: expected enterTryIt to auto-scaffold a body")
+	}
 	m = step(m, "c")
 	if m.TryIt.ContentTypeTab != 1 {
-		t.Errorf("expected 'c' to advance to tab 1, got %d", m.TryIt.ContentTypeTab)
+		t.Fatalf("expected 'c' to advance to tab 1, got %d", m.TryIt.ContentTypeTab)
 	}
-
-	// 'i' scaffolds against whichever tab is now selected — asserts the
-	// migrated call site in handleBodyFocusedKey actually uses the cycled
-	// tab, not a stale application/json-only lookup.
-	m = step(m, "i")
 	wantContentType := types[1]
 	if wantContentType == "application/x-www-form-urlencoded" && !strings.Contains(m.TryIt.Body, "=") {
-		t.Errorf("expected form-urlencoded scaffold, got %q", m.TryIt.Body)
+		t.Errorf("expected the body re-encoded as form-urlencoded, got %q", m.TryIt.Body)
 	}
 	if wantContentType == "application/xml" && !strings.Contains(m.TryIt.Body, "<?xml") {
-		t.Errorf("expected XML scaffold, got %q", m.TryIt.Body)
+		t.Errorf("expected the body re-encoded as XML, got %q", m.TryIt.Body)
+	}
+	if wantContentType == "application/json" && !strings.HasPrefix(strings.TrimSpace(m.TryIt.Body), "{") {
+		t.Errorf("expected the body re-encoded as JSON, got %q", m.TryIt.Body)
 	}
 }
 
