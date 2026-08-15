@@ -126,6 +126,12 @@ func (m Model) renderManualPanel(height, width int) string {
 			// why this is "Enter: newline  Esc: done" and not a literal port
 			// of the TS wording.
 			bodyContent = manual.BodyInput.View() + "\n" + dimStyle.Render("Enter: newline  Esc: done")
+		case manual.Body != "" && manual.BodyFocused:
+			// Same fix as renderTryItBodySection's BodyFocused case: a
+			// non-empty body previously showed no hint at all while
+			// focused, hiding the 'i' shortcut the moment it had content —
+			// see that doc comment for the full reasoning.
+			bodyContent = manual.Body + "\n" + dimStyle.Render("i: edit")
 		case manual.Body != "":
 			bodyContent = manual.Body
 		default:

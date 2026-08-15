@@ -720,6 +720,46 @@ func TestParamsRowNotHighlightedWhileHeadersFocused(t *testing.T) {
 	}
 }
 
+// TestBodyHintShownWhileFocusedEvenWithContent is a regression test: a
+// user reported the BODY box showing no 'i' shortcut hint once it had
+// content — renderTryItBodySection's hint text only ever rendered inside
+// the empty-body branch, so the moment enterTryIt auto-scaffolded a body
+// (the common case, not the exception), the hint silently disappeared
+// even while BODY was focused.
+func TestBodyHintShownWhileFocusedEvenWithContent(t *testing.T) {
+	m := New(loadTestSpec(t), "")
+	m = step(m, "enter", "j") // expand first tag, land on its first endpoint
+	found := false
+	for i, item := range m.FlatList {
+		if item.Type == ItemEndpoint && item.Endpoint.Operation.RequestBody != nil {
+			m.LeftIndex = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Skip("no endpoint with a request body in fixture")
+	}
+	m = step(m, "t")
+	if m.TryIt.Body == "" {
+		t.Fatalf("setup: expected enterTryIt to auto-scaffold a non-empty body")
+	}
+
+	params := sortedParameters(m.selectedItem().Endpoint.Operation.Parameters)
+	for range len(params) + 1 {
+		m = step(m, "j")
+	}
+	if !m.TryIt.BodyFocused {
+		t.Fatalf("setup: expected BODY focused")
+	}
+
+	lines := m.renderTryItBodySection(m.TryIt.Endpoint.Operation, 100)
+	out := strings.Join(lines, "\n")
+	if !strings.Contains(stripANSI(out), "i: edit") {
+		t.Errorf("expected an 'i: edit' hint in the focused, non-empty BODY box, got:\n%s", stripANSI(out))
+	}
+}
+
 // TestAddHeaderViaHeadersSection exercises the full add-header flow: enter
 // HEADERS focus, 'i' to start adding, type a name, Tab to the value field,
 // type a value, Enter to commit — matches useHeadersNavigation.ts's

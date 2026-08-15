@@ -76,9 +76,16 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 		// keystroke via onChange, so Esc doesn't truly cancel anything
 		// there either — just stops editing, same as this rewrite).
 		content = []string{m.TryIt.BodyInput.View(), dimStyle.Render("Enter: newline  Esc: done")}
-	// Matches TS: no hint is shown once the body is non-empty and not
-	// being edited — RightPanel.tsx's hint text only ever renders inside
-	// the `!editingBody && !body` branch above.
+	case m.TryIt.BodyFocused:
+		// Deliberate divergence from TS, not a port of it: RightPanel.tsx's
+		// hint text only ever renders inside the `!editingBody && !body`
+		// branch above — once the body has content (the common case,
+		// since try-it-out auto-scaffolds one on entry, see enterTryIt),
+		// the 'i'/'k' shortcuts go silent with no way to discover them
+		// while BODY is actually focused. Show the same focus hint here
+		// too — found via a user report ("Body does not show the
+		// shortcut i if active").
+		content = append(strings.Split(m.TryIt.Body, "\n"), dimStyle.Render("i: edit | k: back to params"))
 	default:
 		content = strings.Split(m.TryIt.Body, "\n")
 	}
