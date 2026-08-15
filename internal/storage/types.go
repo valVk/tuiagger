@@ -56,9 +56,15 @@ type EndpointOverride struct {
 	CustomParams   []CustomParameter `json:"customParams"`
 	DisabledParams []string          `json:"disabledParams"`
 	Body           string            `json:"body,omitempty"`
-	OverridePath   string            `json:"overridePath,omitempty"`
-	OverrideMethod string            `json:"overrideMethod,omitempty"`
-	LastUsed       string            `json:"lastUsed"`
+	// ContentType is the body's format, e.g. "application/json",
+	// "application/x-www-form-urlencoded", "application/xml" — empty
+	// (the zero value) means "not yet chosen, default to whichever the
+	// endpoint's declared content types put first", not "application/json"
+	// specifically; the try-it-out session picks the actual default.
+	ContentType    string `json:"contentType,omitempty"`
+	OverridePath   string `json:"overridePath,omitempty"`
+	OverrideMethod string `json:"overrideMethod,omitempty"`
+	LastUsed       string `json:"lastUsed"`
 }
 
 type OverridesStore struct {
