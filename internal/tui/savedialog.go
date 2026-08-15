@@ -203,7 +203,7 @@ func (m Model) saveManualRequest(name, tag string) Model {
 			r.QueryParams = queryParams
 			r.Headers = headers
 			r.Body = manual.Body
-			r.BodyType = contentType
+			r.ContentType = contentType
 			r.Name = name
 			r.Tag = tag
 		})
@@ -211,7 +211,7 @@ func (m Model) saveManualRequest(name, tag string) Model {
 		m.Store.AddSavedRequest(storage.SavedRequest{
 			ManualRequestState: storage.ManualRequestState{
 				Method: method, Path: manual.Path, QueryParams: queryParams, Headers: headers,
-				Body: manual.Body, BodyType: contentType,
+				Body: manual.Body, ContentType: contentType,
 			},
 			Name: name,
 			Tag:  tag,

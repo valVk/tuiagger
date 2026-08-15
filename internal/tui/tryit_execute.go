@@ -124,9 +124,7 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 		// yet) — same realistic-data scaffold, just generated here instead
 		// of once up front.
 		if body == "" && requestBody != nil && isWriteMethod(effectiveMethod) {
-			if schema := selectedSchema(requestBody.Content, effectiveContentType); schema != nil {
-				body = encodeBody(effectiveContentType, openapi.ScaffoldFakeBody(schema))
-			}
+			body = scaffoldFor(requestBody.Content, effectiveContentType, true)
 		}
 
 		spec := buildRequestSpec(servers, selectedServer, store, collector, effectiveMethod, path, body, effectiveContentType, security, securitySchemes)

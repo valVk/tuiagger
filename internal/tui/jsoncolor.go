@@ -32,7 +32,7 @@ var (
 var jsonKeyLineRe = regexp.MustCompile(`^(\s*)"([^"]*)"( \*)?:\s?(.*)$`)
 
 // colorizeJSONLine colorizes one line of valid, pretty-printed JSON (as
-// produced by jsonPretty — the auto-scaffolded try-it-out body preview):
+// produced by bodyformat.Encode — the auto-scaffolded try-it-out body preview):
 // quoted keys cyan, string values green, numbers/true/false/null yellow,
 // everything else (braces, brackets, commas, colons, whitespace) dim.
 func colorizeJSONLine(line string) string {

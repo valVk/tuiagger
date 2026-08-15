@@ -19,7 +19,12 @@ type ManualRequestState struct {
 	QueryParams []KeyValuePair `json:"queryParams"`
 	Headers     []KeyValuePair `json:"headers"`
 	Body        string         `json:"body"`
-	BodyType    string         `json:"bodyType"`
+	// ContentType holds a content-type string (e.g. "application/json",
+	// "application/x-www-form-urlencoded"). The JSON tag stays "bodyType"
+	// — its pre-rename name — so saved-requests.json files written before
+	// this field held content types (see indexOfContentType's doc
+	// comment) still round-trip.
+	ContentType string `json:"bodyType"`
 }
 
 type SavedRequest struct {
@@ -51,16 +56,24 @@ type CustomParameter struct {
 	Enabled bool   `json:"enabled"`
 }
 
+// DefaultContentType is the sentinel value for
+// EndpointOverride.ContentType meaning "no explicit selection persisted,
+// default to whichever the endpoint's declared content types put first"
+// — not "application/json" specifically, and not "the empty string was
+// deliberately chosen as a content type" (not a real value, so that
+// reading is never possible). Named so read and write sites reference the
+// convention explicitly instead of a bare "" that could be reintroduced
+// by accident with an unrelated meaning.
+const DefaultContentType = ""
+
 type EndpointOverride struct {
 	Params         map[string]string `json:"params"`
 	CustomParams   []CustomParameter `json:"customParams"`
 	DisabledParams []string          `json:"disabledParams"`
 	Body           string            `json:"body,omitempty"`
-	// ContentType is the body's format, e.g. "application/json",
-	// "application/x-www-form-urlencoded", "application/xml" — empty
-	// (the zero value) means "not yet chosen, default to whichever the
-	// endpoint's declared content types put first", not "application/json"
-	// specifically; the try-it-out session picks the actual default.
+	// ContentType holds the body's format, e.g. "application/json",
+	// "application/x-www-form-urlencoded", "application/xml", or
+	// DefaultContentType — see its doc comment.
 	ContentType    string `json:"contentType,omitempty"`
 	OverridePath   string `json:"overridePath,omitempty"`
 	OverrideMethod string `json:"overrideMethod,omitempty"`

@@ -1,12 +1,8 @@
 package tui
 
 import (
-	"bytes"
-	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"maps"
-	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -15,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/valVK/tuiagger/internal/bodyformat"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/storage"
 )
@@ -119,9 +116,10 @@ func (m Model) enterTryIt() Model {
 			// Restore which content type was selected last time, by
 			// mapping the persisted type string back to its tab index —
 			// see rawContentType's doc comment for why the stored value is
-			// "" (leaving ContentTypeTab at its 0 default) unless the user
-			// had explicitly picked something other than the default tab.
-			if override.ContentType != "" && ep.Operation.RequestBody != nil {
+			// storage.DefaultContentType (leaving ContentTypeTab at its 0
+			// default) unless the user had explicitly picked something
+			// other than the default tab.
+			if override.ContentType != storage.DefaultContentType && ep.Operation.RequestBody != nil {
 				types := sortedContentTypes(ep.Operation.RequestBody.Content)
 				if idx := slices.Index(types, override.ContentType); idx >= 0 {
 					state.ContentTypeTab = idx
@@ -135,11 +133,7 @@ func (m Model) enterTryIt() Model {
 	// nothing there already (a saved override's body always wins).
 	if state.Body == "" && ep.Operation.RequestBody != nil {
 		contentType := selectedContentType(ep, state.ContentTypeTab)
-		if schema := selectedSchema(ep.Operation.RequestBody.Content, contentType); schema != nil {
-			if scaffolded := openapi.ScaffoldFakeBody(schema); scaffolded != nil {
-				state.Body = encodeBody(contentType, scaffolded)
-			}
-		}
+		state.Body = scaffoldFor(ep.Operation.RequestBody.Content, contentType, true)
 	}
 	state.HeaderTable.ValueInput = textinput.New()
 	state.HeaderTable.NameInput = textinput.New()
@@ -220,63 +214,32 @@ func selectedSchema(content map[string]openapi.MediaType, contentType string) *o
 	return nil
 }
 
-// unsupportedContentTypes are declared-but-not-yet-encodable request body
-// formats, filtered out of sortedContentTypes below so selecting one can't
-// silently produce an empty/wrong body: multipart/form-data needs a
-// file-attach UI and a generated boundary (deliberately deferred, see
-// CLAUDE.md's Out of Scope — "File uploads / FormData"); application/
-// octet-stream is raw binary, not something a schema-driven scaffolder can
-// represent at all.
-var unsupportedContentTypes = map[string]bool{
-	"multipart/form-data":      true,
-	"application/octet-stream": true,
-}
-
-// sortedContentTypes matches sortedResponseCodes' shape (browse.go): the
-// declared content-type keys, sorted for deterministic cycling, minus
-// formats this app can't yet encode.
-func sortedContentTypes(content map[string]openapi.MediaType) []string {
-	var types []string
-	for ct := range content {
-		if !unsupportedContentTypes[ct] {
-			types = append(types, ct)
-		}
-	}
-	sort.Strings(types)
-	return types
-}
-
-// selectedContentType resolves a tryItState.ContentTypeTab index to an
-// actual content-type string for the given endpoint, always returning a
-// non-empty, encodable value: "application/json" when the endpoint has no
-// request body or declares no encodable content type at all (matching
-// Build()'s own application/json fallback), otherwise
-// sortedContentTypes(...)[tab modulo len].
-func selectedContentType(ep *openapi.ParsedEndpoint, tab int) string {
-	if ep == nil || ep.Operation.RequestBody == nil {
-		return "application/json"
-	}
-	types := sortedContentTypes(ep.Operation.RequestBody.Content)
-	if len(types) == 0 {
-		return "application/json"
-	}
-	idx := ((tab % len(types)) + len(types)) % len(types)
-	return types[idx]
-}
-
-// rawContentType is what actually gets persisted into
-// storage.EndpointOverride.ContentType: "" at the default tab (index 0),
-// matching isEmptyOverride's "nothing worth persisting" contract — an
-// untouched session shouldn't mark the endpoint "*saved params" just for
-// resolving to its own default content type, the same reasoning that keeps
-// an auto-scaffolded-but-untouched Body from tripping isEmptyOverride
-// either (see exitTryIt's doc comment). Only an explicit non-default
-// selection is worth writing to disk.
-func rawContentType(ep *openapi.ParsedEndpoint, tab int) string {
-	if tab == 0 {
+// scaffoldFor generates and encodes a body for contentType against
+// content's declared schema, or "" if there's no schema for that type or
+// scaffolding produces nothing. fake picks openapi.ScaffoldFakeBody
+// (realistic generated data — auto-fill on entering try-it-out, and the
+// fallback at execute time) vs openapi.ScaffoldPlaceholder (schema-shaped
+// placeholder values — the empty-body preview, and starting an edit with
+// nothing typed yet). Every scaffold call site threads the same
+// resolve-schema -> scaffold -> encode sequence through here, so a future
+// change to that sequence (e.g. a new fallback) touches one place instead
+// of being applied by hand at each of the five call sites that used to
+// repeat it, with nothing enforcing they stayed in sync.
+func scaffoldFor(content map[string]openapi.MediaType, contentType string, fake bool) string {
+	schema := selectedSchema(content, contentType)
+	if schema == nil {
 		return ""
 	}
-	return selectedContentType(ep, tab)
+	var scaffolded any
+	if fake {
+		scaffolded = openapi.ScaffoldFakeBody(schema)
+	} else {
+		scaffolded = openapi.ScaffoldPlaceholder(schema)
+	}
+	if scaffolded == nil {
+		return ""
+	}
+	return bodyformat.Encode(contentType, scaffolded)
 }
 
 // exitTryIt persists the in-progress edit (params, disabled set, body,
@@ -321,7 +284,7 @@ func (m Model) exitTryIt() Model {
 // empty-but-present override).
 func isEmptyOverride(o storage.EndpointOverride) bool {
 	return len(o.Params) == 0 && len(o.CustomParams) == 0 && len(o.DisabledParams) == 0 &&
-		o.Body == "" && o.ContentType == "" && o.OverridePath == "" && o.OverrideMethod == ""
+		o.Body == "" && o.ContentType == storage.DefaultContentType && o.OverridePath == "" && o.OverrideMethod == ""
 }
 
 // tryItTotalRows matches ParametersSection.tsx's rows array: required specs,
@@ -419,174 +382,6 @@ func cycleQueryPath(in string) string {
 		return "path"
 	}
 	return "query"
-}
-
-func jsonPretty(v any) string {
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-// encodeBody serializes a scaffolded value tree (whatever
-// ScaffoldFakeBody/ScaffoldPlaceholder produced — map[string]any/[]any/
-// string/int/bool/nil, not JSON-specific) per contentType. The single
-// dispatcher every scaffold call site uses, so adding support for another
-// format later is one new case here, not editing every call site.
-func encodeBody(contentType string, v any) string {
-	switch contentType {
-	case "application/x-www-form-urlencoded":
-		return encodeFormURLEncoded(v)
-	case "application/xml", "text/xml":
-		return encodeXML(v, "root")
-	default:
-		return jsonPretty(v)
-	}
-}
-
-// encodeFormURLEncoded serializes a scaffolded value tree as human-
-// editable "key=value" text — plain and unescaped, one field per line —
-// rather than the actual percent-encoded wire format: hand-editing a real
-// application/x-www-form-urlencoded string (spaces as "+", punctuation as
-// "%XX") in a plain textarea is painful and error-prone, found via a user
-// report showing exactly that friction. formTextToQueryString does the
-// real percent-encoding, run once at send time (execute.go's
-// buildRequestSpec), so what's shown/typed here never needs to match the
-// wire format the user is actually sending.
-//
-// Only top-level object keys become fields (the format has no natural
-// nested-object encoding). A plain-valued array (strings/numbers/bools)
-// repeats its key once per item — matching how HTML forms and
-// net/url.Values themselves already encode multi-value fields, so
-// formTextToQueryString's line-by-line url.Values.Add just works without
-// bracket-notation machinery. An object, or an array containing one,
-// falls back to a single compact-JSON line for that key (jsonCompact, not
-// jsonPretty — an indented value would span multiple lines and get
-// misread as separate key=value pairs by formTextToQueryString) rather
-// than being silently dropped or exploded into per-field lines nobody
-// asked for.
-func encodeFormURLEncoded(v any) string {
-	obj, ok := v.(map[string]any)
-	if !ok {
-		// Not an object at the top level (e.g. a bare array/scalar
-		// schema) — nothing sensible to key form fields by.
-		return "value=" + toStr(v)
-	}
-	var lines []string
-	for _, k := range sortedAnyKeys(obj) {
-		lines = append(lines, formFieldLines(k, obj[k])...)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func formFieldLines(key string, v any) []string {
-	if arr, ok := v.([]any); ok && isPlainValueArray(arr) {
-		lines := make([]string, len(arr))
-		for i, item := range arr {
-			lines[i] = key + "=" + toStr(item)
-		}
-		return lines
-	}
-	switch v.(type) {
-	case map[string]any, []any:
-		return []string{key + "=" + jsonCompact(v)}
-	default:
-		return []string{key + "=" + toStr(v)}
-	}
-}
-
-// isPlainValueArray reports whether every element is a scalar (string,
-// number, bool, nil) rather than a nested object/array — the shape
-// formFieldLines can repeat one key=value line per item for.
-func isPlainValueArray(arr []any) bool {
-	for _, item := range arr {
-		switch item.(type) {
-		case map[string]any, []any:
-			return false
-		}
-	}
-	return true
-}
-
-func jsonCompact(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-// formTextToQueryString converts encodeFormURLEncoded's human-editable
-// "key=value" lines into the actual percent-encoded
-// application/x-www-form-urlencoded wire format. Blank lines and lines
-// without "=" are skipped (typing/editing artifacts, not errors worth
-// surfacing here — same "trust the user's hand-typed body" model already
-// in place for JSON). Repeated keys accumulate as a multi-value field
-// (url.Values.Add), matching formFieldLines' one-line-per-array-item
-// encoding on the way in.
-func formTextToQueryString(text string) string {
-	values := url.Values{}
-	for line := range strings.SplitSeq(text, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-		values.Add(key, value)
-	}
-	return values.Encode()
-}
-
-// encodeXML serializes a scaffolded value tree as XML, recursively:
-// object -> nested <key>...</key> per property (sorted for deterministic
-// output, same reason jsonPretty's json.MarshalIndent sorts map keys —
-// plain Go map iteration isn't ordered), array -> one repeated tag per
-// item, primitive -> escaped text content. root names the top-level
-// element since Schema carries no name of its own for a request body.
-func encodeXML(v any, root string) string {
-	var b strings.Builder
-	b.WriteString(`<?xml version="1.0"?>` + "\n")
-	writeXMLElement(&b, root, v, 0)
-	return b.String()
-}
-
-func writeXMLElement(b *strings.Builder, name string, v any, indent int) {
-	pad := strings.Repeat("  ", indent)
-	switch t := v.(type) {
-	case map[string]any:
-		b.WriteString(pad + "<" + name + ">\n")
-		for _, k := range sortedAnyKeys(t) {
-			writeXMLElement(b, k, t[k], indent+1)
-		}
-		b.WriteString(pad + "</" + name + ">\n")
-	case []any:
-		for _, item := range t {
-			writeXMLElement(b, name, item, indent)
-		}
-	default:
-		b.WriteString(pad + "<" + name + ">" + xmlEscape(toStr(t)) + "</" + name + ">\n")
-	}
-}
-
-func xmlEscape(s string) string {
-	var buf bytes.Buffer
-	if err := xml.EscapeText(&buf, []byte(s)); err != nil {
-		return s
-	}
-	return buf.String()
-}
-
-func sortedAnyKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func disabledSlice(m map[string]bool) []string {

@@ -37,9 +37,8 @@ func (m Model) renderManualPanel(height, width int) string {
 
 // renderManualLines builds ManualRequestPanel.tsx's content — method/path
 // header, action buttons, a merged query+header PARAMS table, and (for
-// write methods) a single-line BODY field — no bubbles/textarea vendored
-// yet, so multi-line body editing is a deliberate scope cut, see
-// HANDOFF.md. Split from renderManualPanel (which applies scroll + border
+// write methods) a multi-line BODY box shared with try-it-out via
+// bodybox.go. Split from renderManualPanel (which applies scroll + border
 // chrome on top) so rightPanelLineCount can measure this content without
 // duplicating it — same shape as renderTryItLines/renderEndpointLines.
 func (m Model) renderManualLines(width int) []string {
@@ -126,50 +125,24 @@ func (m Model) renderManualLines(width int) []string {
 	lines = append(lines, renderAddParamRow(addSelected, addSelected && manual.ParamEditing && manual.ParamAddNew, widgets))
 
 	if isWriteMethod(method) {
-		bodyHeading := boldStyle.Render("BODY")
-		if manual.BodyFocused {
-			bodyHeading += dimStyle.Render(" c:cycle")
-		}
-		lines = append(lines, "", bodyHeading, renderContentTypeTabLine(manualContentTypes, manualSelectedContentType(manual.ContentTypeTab)))
-		// Matches renderTryItBodySection's explicit Width — without it the
-		// box shrinks to fit whatever's currently typed instead of
-		// spanning the panel, which looked inconsistent once this editor
-		// became a multi-line textarea (a pre-existing cosmetic gap from
-		// the original single-line textinput, fixed while unifying the two
-		// body editors in Phase 7).
-		bodyBoxStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Width(max(inner-4, 4))
-		switch {
-		case manual.EditingBody:
-			bodyBoxStyle = bodyBoxStyle.BorderForeground(color2xx)
-		case manual.BodyFocused:
-			bodyBoxStyle = bodyBoxStyle.BorderForeground(activeBorderColor)
-		default:
-			bodyBoxStyle = bodyBoxStyle.BorderForeground(inactiveBorderColor)
-		}
-		var bodyContent string
-		switch {
-		case manual.EditingBody:
-			// Matches renderTryItBodySection's hint — see its doc comment for
-			// why this is "Enter: newline  Esc: done" and not a literal port
-			// of the TS wording.
-			bodyContent = manual.BodyInput.View() + "\n" + dimStyle.Render("Enter: newline  Esc: done")
-		case manual.Body != "" && manual.BodyFocused:
-			// Same fix as renderTryItBodySection's BodyFocused case: a
-			// non-empty body previously showed no hint at all while
-			// focused, hiding the 'i' shortcut the moment it had content —
-			// see that doc comment for the full reasoning.
-			bodyContent = manual.Body + "\n" + dimStyle.Render("i: edit")
-		case manual.Body != "":
-			bodyContent = manual.Body
-		default:
-			bodyContent = dimStyle.Render("i: edit")
-		}
-		// Same fix as renderTryItBodySection: bodyBoxStyle's render is a
-		// multi-line string (the bordered box), so it must be split into
-		// individual rows before joining the flat lines slice — appending it
-		// as one element under-counts its real height and overflows the
-		// panel's row budget.
-		lines = append(lines, strings.Split(bodyBoxStyle.Render(bodyContent), "\n")...)
+		contentType := manualSelectedContentType(manual.ContentTypeTab)
+		lines = append(lines, "")
+		lines = append(lines, renderBodyHeading(manualContentTypes, contentType, manual.BodyFocused, false)...)
+		// Manual has no schema to scaffold an empty-body placeholder from
+		// (a hand-built request can be anything), so unlike TryIt's box it
+		// shows the same "i: edit" hint whether focused or not — passing
+		// the same string for both EmptyHint fields reproduces that
+		// exactly rather than introducing TryIt's "j: focus" distinction
+		// where Manual never had it.
+		lines = append(lines, renderBodyBox(bodyBoxState{
+			Width:              inner,
+			Focused:            manual.BodyFocused,
+			Editing:            manual.EditingBody,
+			Body:               manual.Body,
+			BodyInput:          manual.BodyInput,
+			EmptyHintUnfocused: "i: edit",
+			EmptyHintFocused:   "i: edit",
+		})...)
 	}
 
 	if m.Viewer.Response != nil {

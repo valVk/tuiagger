@@ -71,10 +71,7 @@ func (m Model) handleManualKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.Manual.BodyFocused = false
 		case "c":
-			// Cycles manualContentTypes — a no-op check isn't needed here:
-			// unlike try-it-out's spec-derived list, this fixed 3-entry
-			// list always has more than one option.
-			m.Manual.ContentTypeTab = (m.Manual.ContentTypeTab + 1) % len(manualContentTypes)
+			m.Manual.ContentTypeTab = manualContentTypeCycle().Next(m.Manual.ContentTypeTab)
 		}
 		return m, nil
 	}

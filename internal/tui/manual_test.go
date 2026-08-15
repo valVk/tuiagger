@@ -319,8 +319,8 @@ func TestManualSavePersistsSelectedContentType(t *testing.T) {
 	if len(requests) != 1 {
 		t.Fatalf("expected one saved request, got %d", len(requests))
 	}
-	if requests[0].BodyType != "application/x-www-form-urlencoded" {
-		t.Errorf("expected the selected content type persisted as BodyType, got %q", requests[0].BodyType)
+	if requests[0].ContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("expected the selected content type persisted, got %q", requests[0].ContentType)
 	}
 }
 

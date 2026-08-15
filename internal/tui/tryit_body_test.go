@@ -274,7 +274,7 @@ func TestExecuteSendsContentTypeHeaderMatchingSelectedTab(t *testing.T) {
 
 // TestExecuteEncodesHumanReadableFormBodyForTheWire is a regression test
 // for the human-editable BODY box design: the box shows/accepts plain
-// "key=value" text (encodeFormURLEncoded), but the actual HTTP request
+// "key=value" text (bodyformat.Encode), but the actual HTTP request
 // must carry the real percent-encoded application/x-www-form-urlencoded
 // bytes, not the readable text verbatim — found via a user report that
 // hand-editing a raw percent-encoded string in the textarea was painful.
