@@ -52,13 +52,13 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 			}
 			hint := "j: focus"
 			if m.TryIt.BodyFocused {
-				hint = "i: edit | k: back"
+				hint = "i: edit"
 			}
 			content = append(content, dimStyle.Render(hint))
 		} else {
 			hint := "j to focus, i to edit"
 			if m.TryIt.BodyFocused {
-				hint = "i: edit | k: back to params"
+				hint = "i: edit"
 			}
 			content = append(content, dimStyle.Render(hint))
 		}
@@ -84,8 +84,10 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 		// the 'i'/'k' shortcuts go silent with no way to discover them
 		// while BODY is actually focused. Show the same focus hint here
 		// too — found via a user report ("Body does not show the
-		// shortcut i if active").
-		content = append(strings.Split(m.TryIt.Body, "\n"), dimStyle.Render("i: edit | k: back to params"))
+		// shortcut i if active"). Just "i: edit", not "| k: back to
+		// params" — a user found that half redundant/extra once shown
+		// alongside actual content.
+		content = append(strings.Split(m.TryIt.Body, "\n"), dimStyle.Render("i: edit"))
 	default:
 		content = strings.Split(m.TryIt.Body, "\n")
 	}
