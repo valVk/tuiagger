@@ -63,8 +63,8 @@ type Model struct {
 
 	LeftExpanded bool // '[' toggles 30% <-> 50% left panel width, matching App.tsx
 
-	ShowHelp   bool
-	HelpScroll int
+	ShowHelp bool
+	Help     helpPopupState
 
 	ShowInfo bool
 	Info     infoPopupState
@@ -351,7 +351,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.reloadCmd()
 	case "?":
 		m.ShowHelp = true
-		m.HelpScroll = 0
+		m.Help = helpPopupState{}
 		return m, nil
 	case "i":
 		return m.enterInfo(), nil

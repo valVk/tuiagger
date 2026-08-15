@@ -115,9 +115,18 @@ in the final stage — same pattern as last time.
       established. `activeEnvName` (used by the header bar independent of
       the popup) moved to view.go rather than into environmentsPanelState,
       since it doesn't touch that component's own state.
-- [ ] Stage 3 — Mechanical renames: `HelpPopup`, `SaveDialog`,
-      `RenameTagPopup` get `Init`/`Update`/`View` method names (low-risk,
-      fast — bodies unchanged).
+- [x] Stage 3 — `HelpPopup`/`SaveDialog`/`RenameTagPopup` get `Update`/
+      `View` methods. Skipped adding a no-op `Init()` where a component has
+      no setup beyond a zero-value literal (`helpPopupState{}`,
+      `saveDialogState` built by `newSaveDialogState`, `renameTagState`
+      built by `enterRenameTag`) — YAGNI, matches this project's own
+      "don't add for scenarios that can't happen." `helpPopupState` is new
+      (state used to be flat `HelpScroll` on `Model`); `saveDialogState`/
+      `renameTagState` already existed, just gained `Update`/`View`.
+      `Update` on all three returns a result signal (mirrors
+      `headerTableState`'s convention) for the Model-owned side effects
+      (closing the popup, persisting via `Store`) the component can't do
+      itself.
 - [ ] Stage 4 — TryIt/Manual facades. Add `Init`/`Update`/`View` wrapping
       the existing `handleTryItKey`/`renderTryItLines`/etc. TryIt's `Init`
       snapshots the selected endpoint into its own state (new field on

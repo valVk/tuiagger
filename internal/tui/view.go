@@ -96,13 +96,13 @@ func (m Model) View() string {
 	var body string
 	switch {
 	case m.ShowHelp:
-		body = m.renderHelpPopup(contentHeight, m.Width)
+		body = m.Help.View(contentHeight, m.Width)
 	case m.ShowInfo:
 		body = m.renderInfoPopup(contentHeight, m.Width)
 	case m.Mode == ModeManual && m.Manual.ShowSaveDialog:
-		body = m.renderSaveDialogOverlay(contentHeight, m.Width)
+		body = m.Manual.SaveDialog.View(contentHeight, m.Width)
 	case m.Mode == ModeRenameTag:
-		body = m.renderRenameTagOverlay(contentHeight, m.Width)
+		body = m.RenameTag.View(contentHeight, m.Width)
 	default:
 		left := m.renderLeftPanel(contentHeight, leftWidth)
 		var right string

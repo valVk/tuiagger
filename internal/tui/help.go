@@ -138,21 +138,42 @@ func init() {
 	helpContentHeight = max(len(helpLeftLines), len(helpRightLines))
 }
 
-func (m Model) handleHelpKey(key string) (tea.Model, tea.Cmd) {
-	viewHeight := max(m.Height-6-3, 1) // matches renderHelpPopup's viewHeight below
-	maxScroll := max(helpContentHeight-viewHeight, 0)
+// helpPopupState backs the '?' overlay. A nested widget the root Model
+// dispatches into once ShowHelp is true (ShowHelp itself stays root-level,
+// same as InfoPopup's ShowInfo) — see infopopup.go's doc comment on why
+// "is this popup open at all" and "the popup's own state" are kept
+// separate.
+type helpPopupState struct {
+	Scroll int
+}
 
+// Update moves the scroll position, or reports that '?'/Esc should close
+// the popup — ShowHelp is root-owned, so this can't just clear it itself
+// (same "report the change" shape as serversPanelState.Update).
+func (h helpPopupState) Update(key string, viewHeight int) (next helpPopupState, closePopup bool) {
+	maxScroll := max(helpContentHeight-viewHeight, 0)
+	next = h
 	switch key {
 	case "?", "esc":
-		m.ShowHelp = false
+		return next, true
 	case "j", "down":
-		m.HelpScroll = min(m.HelpScroll+1, maxScroll)
+		next.Scroll = min(next.Scroll+1, maxScroll)
 	case "k", "up":
-		m.HelpScroll = max(m.HelpScroll-1, 0)
+		next.Scroll = max(next.Scroll-1, 0)
 	case "G":
-		m.HelpScroll = maxScroll
+		next.Scroll = maxScroll
 	case "g":
-		m.HelpScroll = 0
+		next.Scroll = 0
+	}
+	return next, false
+}
+
+func (m Model) handleHelpKey(key string) (tea.Model, tea.Cmd) {
+	viewHeight := max(m.Height-6-3, 1) // matches View's viewHeight below
+	var closePopup bool
+	m.Help, closePopup = m.Help.Update(key, viewHeight)
+	if closePopup {
+		m.ShowHelp = false
 	}
 	return m, nil
 }
@@ -183,13 +204,13 @@ func renderHelpLine(l helpLine) string {
 		dimStyle.Render(truncate(l.desc, helpDescWidth))
 }
 
-// renderHelpPopup matches HelpPopup.tsx: a double-bordered cyan box
-// replacing the two-panel body (Header/StatusBar stay visible around it),
-// two scrollable columns of flattened sections.
-func (m Model) renderHelpPopup(height, width int) string {
+// View matches HelpPopup.tsx: a double-bordered cyan box replacing the
+// two-panel body (Header/StatusBar stay visible around it), two scrollable
+// columns of flattened sections.
+func (h helpPopupState) View(height, width int) string {
 	viewHeight := max(height-3, 1) // border top+bottom (2) + title row (1)
 	maxScroll := max(helpContentHeight-viewHeight, 0)
-	scroll := min(m.HelpScroll, maxScroll)
+	scroll := min(h.Scroll, maxScroll)
 
 	leftSlice := sliceHelpLines(helpLeftLines, scroll, viewHeight)
 	rightSlice := sliceHelpLines(helpRightLines, scroll, viewHeight)

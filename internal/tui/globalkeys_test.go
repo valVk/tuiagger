@@ -54,14 +54,14 @@ func TestHelpPopupBlocksOtherKeysWhileOpen(t *testing.T) {
 func TestHelpPopupScrollClamped(t *testing.T) {
 	m := step(sizedModel(t), "?")
 	m = step(m, "k") // already at top, must clamp not go negative
-	if m.HelpScroll != 0 {
-		t.Errorf("expected scroll clamped at 0, got %d", m.HelpScroll)
+	if m.Help.Scroll != 0 {
+		t.Errorf("expected scroll clamped at 0, got %d", m.Help.Scroll)
 	}
 	m = step(m, "G")
-	afterG := m.HelpScroll
+	afterG := m.Help.Scroll
 	m = step(m, "j")
-	if m.HelpScroll != afterG {
-		t.Errorf("expected scroll clamped at max, got %d want %d", m.HelpScroll, afterG)
+	if m.Help.Scroll != afterG {
+		t.Errorf("expected scroll clamped at max, got %d want %d", m.Help.Scroll, afterG)
 	}
 }
 

@@ -66,82 +66,105 @@ func (s saveDialogState) currentTag() string {
 	return s.Tags[s.TagIndex]
 }
 
-func (m Model) handleSaveDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	dlg := &m.Manual.SaveDialog
+// saveDialogResult signals what Update decided the parent should do —
+// close on cancel, or persist+close on a successful save. Mirrors
+// headerTableState's "report the change, let the parent apply it"
+// convention (see headertable.go), since saving needs Manual-level
+// (Model-owned: Store, exitManual) side effects this component can't
+// perform itself.
+type saveDialogResult int
+
+const (
+	saveDialogNone saveDialogResult = iota
+	saveDialogCancelled
+	saveDialogSaved
+)
+
+func (s saveDialogState) Update(msg tea.KeyMsg) (saveDialogState, saveDialogResult, tea.Cmd) {
 	key := msg.String()
 
 	if key == "esc" {
-		if dlg.NewTagMode {
-			dlg.NewTagMode = false
-			dlg.NewTagInput.SetValue("")
-			dlg.Focus = "tag"
-			return m, nil
+		if s.NewTagMode {
+			s.NewTagMode = false
+			s.NewTagInput.SetValue("")
+			s.Focus = "tag"
+			return s, saveDialogNone, nil
 		}
-		m.Manual.ShowSaveDialog = false
-		return m, nil
+		return s, saveDialogCancelled, nil
 	}
 
-	switch dlg.Focus {
+	switch s.Focus {
 	case "name":
 		if key == "enter" || key == "tab" {
-			dlg.Focus = "tag"
-			dlg.NameInput.Blur()
-			return m, nil
+			s.Focus = "tag"
+			s.NameInput.Blur()
+			return s, saveDialogNone, nil
 		}
 		var cmd tea.Cmd
-		dlg.NameInput, cmd = dlg.NameInput.Update(msg)
-		return m, cmd
+		s.NameInput, cmd = s.NameInput.Update(msg)
+		return s, saveDialogNone, cmd
 
 	case "tag":
 		switch key {
 		case "left":
-			if dlg.TagIndex > 0 {
-				dlg.TagIndex--
+			if s.TagIndex > 0 {
+				s.TagIndex--
 			}
-			return m, nil
+			return s, saveDialogNone, nil
 		case "right":
-			if dlg.TagIndex < len(dlg.Tags)-1 {
-				dlg.TagIndex++
+			if s.TagIndex < len(s.Tags)-1 {
+				s.TagIndex++
 			} else {
-				dlg.NewTagMode = true
-				dlg.Focus = "newTag"
-				dlg.NewTagInput.Focus()
+				s.NewTagMode = true
+				s.Focus = "newTag"
+				s.NewTagInput.Focus()
 			}
-			return m, nil
+			return s, saveDialogNone, nil
 		case "tab":
-			dlg.Focus = "name"
-			dlg.NameInput.Focus()
-			return m, nil
+			s.Focus = "name"
+			s.NameInput.Focus()
+			return s, saveDialogNone, nil
 		case "enter":
-			name := strings.TrimSpace(dlg.NameInput.Value())
-			tag := dlg.currentTag()
-			if name != "" && tag != "" {
-				return m.saveManualRequest(name, tag), nil
+			if strings.TrimSpace(s.NameInput.Value()) != "" && s.currentTag() != "" {
+				return s, saveDialogSaved, nil
 			}
-			return m, nil
+			return s, saveDialogNone, nil
 		}
-		return m, nil
+		return s, saveDialogNone, nil
 
 	case "newTag":
-		if key == "left" && dlg.NewTagInput.Value() == "" {
-			dlg.NewTagMode = false
-			dlg.Focus = "tag"
-			return m, nil
+		if key == "left" && s.NewTagInput.Value() == "" {
+			s.NewTagMode = false
+			s.Focus = "tag"
+			return s, saveDialogNone, nil
 		}
 		if key == "enter" {
-			name := strings.TrimSpace(dlg.NameInput.Value())
-			tag := strings.TrimSpace(dlg.NewTagInput.Value())
-			if name != "" && tag != "" {
-				return m.saveManualRequest(name, tag), nil
+			if strings.TrimSpace(s.NameInput.Value()) != "" && strings.TrimSpace(s.NewTagInput.Value()) != "" {
+				return s, saveDialogSaved, nil
 			}
-			return m, nil
+			return s, saveDialogNone, nil
 		}
 		var cmd tea.Cmd
-		dlg.NewTagInput, cmd = dlg.NewTagInput.Update(msg)
-		return m, cmd
+		s.NewTagInput, cmd = s.NewTagInput.Update(msg)
+		return s, saveDialogNone, cmd
 	}
 
-	return m, nil
+	return s, saveDialogNone, nil
+}
+
+func (m Model) handleSaveDialogKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var result saveDialogResult
+	var cmd tea.Cmd
+	m.Manual.SaveDialog, result, cmd = m.Manual.SaveDialog.Update(msg)
+	switch result {
+	case saveDialogCancelled:
+		m.Manual.ShowSaveDialog = false
+	case saveDialogSaved:
+		name := strings.TrimSpace(m.Manual.SaveDialog.NameInput.Value())
+		tag := m.Manual.SaveDialog.currentTag()
+		return m.saveManualRequest(name, tag), nil
+	}
+	return m, cmd
 }
 
 // saveManualRequest persists the in-progress manual draft, matching
@@ -197,33 +220,31 @@ func (m Model) saveManualRequest(name, tag string) Model {
 	return m.exitManual().refreshSavedRequests()
 }
 
-// renderSaveDialogOverlay matches ManualSaveDialog.tsx: a centered
-// double-bordered box with name field, tag picker, and hint line.
-func (m Model) renderSaveDialogOverlay(height, width int) string {
-	dlg := m.Manual.SaveDialog
-
+// View matches ManualSaveDialog.tsx: a centered double-bordered box with
+// name field, tag picker, and hint line.
+func (s saveDialogState) View(height, width int) string {
 	nameLabel := "Name  "
 	nameStyle := dimStyle
-	if dlg.Focus == "name" {
+	if s.Focus == "name" {
 		nameStyle = cyanStyle
 	}
-	nameLine := nameStyle.Render(nameLabel) + dlg.NameInput.View()
+	nameLine := nameStyle.Render(nameLabel) + s.NameInput.View()
 
 	tagLabel := "Tag   "
 	tagStyle := dimStyle
-	if dlg.Focus == "tag" || dlg.Focus == "newTag" {
+	if s.Focus == "tag" || s.Focus == "newTag" {
 		tagStyle = cyanStyle
 	}
 	var tagValue string
-	if dlg.NewTagMode {
-		tagValue = dlg.NewTagInput.View()
+	if s.NewTagMode {
+		tagValue = s.NewTagInput.View()
 	} else {
-		current := dlg.currentTag()
+		current := s.currentTag()
 		if current == "" {
 			current = "(no tags)"
 		}
 		valStyle := lipgloss.NewStyle()
-		if dlg.Focus == "tag" {
+		if s.Focus == "tag" {
 			valStyle = cyanStyle
 		}
 		tagValue = dimStyle.Render("← ") + valStyle.Render(current) + dimStyle.Render(" → new")
@@ -247,26 +268,5 @@ func (m Model) renderSaveDialogOverlay(height, width int) string {
 		Width(60).
 		Render(content)
 
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
-}
-
-// renderRenameTagOverlay is a small adaptation from TS, which renders the
-// rename input inline in RightPanel rather than as its own overlay — see
-// HANDOFF.md for why this rewrite uses a centered box instead.
-func (m Model) renderRenameTagOverlay(height, width int) string {
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.NewStyle().Bold(true).Foreground(activeBorderColor).Render("RENAME TAG"),
-		"",
-		dimStyle.Render("Old: ")+m.RenameTag.TagName,
-		cyanStyle.Render("New: ")+m.RenameTag.Input.View(),
-		"",
-		dimStyle.Render("Enter: save  Esc: cancel"),
-	)
-	box := lipgloss.NewStyle().
-		Border(lipgloss.DoubleBorder()).
-		BorderForeground(activeBorderColor).
-		Padding(1, 2).
-		Width(50).
-		Render(content)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
