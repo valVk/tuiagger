@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/storage"
 )
@@ -139,6 +140,14 @@ func newBodyTextarea() textarea.Model {
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
 	ta.SetHeight(10)
+	// bubbles/textarea's default FocusedStyle.CursorLine paints a
+	// full-width background behind whichever line the cursor sits on —
+	// since most of a JSON body's lines are short, that background
+	// extends across mostly blank padding, reading as a stray highlighted
+	// block rather than a cursor indicator (found via a user report: "why
+	// body have extra white line"). The terminal's own cursor already
+	// shows position; this box doesn't need a second, wider indicator.
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	return ta
 }
 
