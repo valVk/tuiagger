@@ -52,8 +52,9 @@ type manualState struct {
 	// focused, so 'k' can scroll back up through whatever 'j' scrolled
 	// past before unfocusing back to PARAMETERS.
 	BodyScrollFloor int
-	// ContentTypeTab indexes manualContentTypes below — cycled by 'c'
-	// while BODY is focused, same key/shape as tryItState.ContentTypeTab.
+	// ContentTypeTab indexes manualContentTypes (contenttype.go) — cycled
+	// by 'c' while BODY is focused, same key/shape as
+	// tryItState.ContentTypeTab.
 	// Unlike try-it-out, the manual builder has no spec/schema to
 	// enumerate declared content types from (a hand-built request can be
 	// anything), so this is a fixed 3-way toggle instead of a
@@ -123,34 +124,6 @@ func (m Model) exitManual() Model {
 func indexOfMethod(method string) int {
 	for i, m := range httpMethods {
 		if strings.EqualFold(m, method) {
-			return i
-		}
-	}
-	return 0
-}
-
-// manualContentTypes is the manual builder's fixed content-type cycle —
-// see manualState.ContentTypeTab's doc comment for why this is a static
-// list rather than sortedContentTypes(...) over a spec.
-var manualContentTypes = []string{"application/json", "application/x-www-form-urlencoded", "application/xml"}
-
-// manualSelectedContentType resolves a ContentTypeTab index to its type
-// string, wrapping out-of-range values the same way selectedContentType
-// does for try-it-out.
-func manualSelectedContentType(tab int) string {
-	idx := ((tab % len(manualContentTypes)) + len(manualContentTypes)) % len(manualContentTypes)
-	return manualContentTypes[idx]
-}
-
-// indexOfContentType maps a persisted content-type string (SavedRequest's
-// repurposed BodyType field) back to its tab index — mirrors enterTryIt's
-// override.ContentType restore. Old saved requests with the pre-refactor
-// literal "json" value (see saveManualRequest's prior hardcoded writes)
-// don't match any entry here and fall back to index 0
-// (application/json), preserving their existing behavior.
-func indexOfContentType(contentType string) int {
-	for i, ct := range manualContentTypes {
-		if ct == contentType {
 			return i
 		}
 	}

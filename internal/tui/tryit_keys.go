@@ -325,9 +325,9 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// endpoint declares 0 or 1 encodable content types, same gating
 		// sortedContentTypes's tab-line hint uses.
 		if ep != nil && ep.Operation.RequestBody != nil {
-			types := sortedContentTypes(ep.Operation.RequestBody.Content)
-			if len(types) > 1 {
-				m.TryIt.ContentTypeTab = (m.TryIt.ContentTypeTab + 1) % len(types)
+			cycle := contentTypeCycle{types: sortedContentTypes(ep.Operation.RequestBody.Content)}
+			if len(cycle.types) > 1 {
+				m.TryIt.ContentTypeTab = cycle.Next(m.TryIt.ContentTypeTab)
 				// Re-scaffold for the newly selected type — without this,
 				// the Content-Type header sent on execute (which follows
 				// ContentTypeTab) stops matching the body text (which
@@ -338,7 +338,7 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// switching content types inherently invalidates it —
 				// there's no schema-agnostic way to reinterpret hand-typed
 				// text from one format as another.
-				contentType := types[m.TryIt.ContentTypeTab]
+				contentType := cycle.Selected(m.TryIt.ContentTypeTab)
 				if body := scaffoldFor(ep.Operation.RequestBody.Content, contentType, true); body != "" {
 					m.TryIt.Body = body
 				}

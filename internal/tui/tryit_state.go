@@ -241,65 +241,6 @@ func scaffoldFor(content map[string]openapi.MediaType, contentType string, fake 
 	return bodyformat.Encode(contentType, scaffolded)
 }
 
-// unsupportedContentTypes are declared-but-not-yet-encodable request body
-// formats, filtered out of sortedContentTypes below so selecting one can't
-// silently produce an empty/wrong body: multipart/form-data needs a
-// file-attach UI and a generated boundary (deliberately deferred, see
-// CLAUDE.md's Out of Scope — "File uploads / FormData"); application/
-// octet-stream is raw binary, not something a schema-driven scaffolder can
-// represent at all.
-var unsupportedContentTypes = map[string]bool{
-	"multipart/form-data":      true,
-	"application/octet-stream": true,
-}
-
-// sortedContentTypes matches sortedResponseCodes' shape (browse.go): the
-// declared content-type keys, sorted for deterministic cycling, minus
-// formats this app can't yet encode.
-func sortedContentTypes(content map[string]openapi.MediaType) []string {
-	var types []string
-	for ct := range content {
-		if !unsupportedContentTypes[ct] {
-			types = append(types, ct)
-		}
-	}
-	sort.Strings(types)
-	return types
-}
-
-// selectedContentType resolves a tryItState.ContentTypeTab index to an
-// actual content-type string for the given endpoint, always returning a
-// non-empty, encodable value: "application/json" when the endpoint has no
-// request body or declares no encodable content type at all (matching
-// Build()'s own application/json fallback), otherwise
-// sortedContentTypes(...)[tab modulo len].
-func selectedContentType(ep *openapi.ParsedEndpoint, tab int) string {
-	if ep == nil || ep.Operation.RequestBody == nil {
-		return "application/json"
-	}
-	types := sortedContentTypes(ep.Operation.RequestBody.Content)
-	if len(types) == 0 {
-		return "application/json"
-	}
-	idx := ((tab % len(types)) + len(types)) % len(types)
-	return types[idx]
-}
-
-// rawContentType is what actually gets persisted into
-// storage.EndpointOverride.ContentType: "" at the default tab (index 0),
-// matching isEmptyOverride's "nothing worth persisting" contract — an
-// untouched session shouldn't mark the endpoint "*saved params" just for
-// resolving to its own default content type, the same reasoning that keeps
-// an auto-scaffolded-but-untouched Body from tripping isEmptyOverride
-// either (see exitTryIt's doc comment). Only an explicit non-default
-// selection is worth writing to disk.
-func rawContentType(ep *openapi.ParsedEndpoint, tab int) string {
-	if tab == 0 {
-		return ""
-	}
-	return selectedContentType(ep, tab)
-}
-
 // exitTryIt persists the in-progress edit (params, disabled set, body,
 // path/method overrides) before returning to browse mode, matching
 // App.tsx's Esc handler — TS saves on Esc exit, not just on execute, so
