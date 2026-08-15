@@ -13,7 +13,7 @@ func gotoInfoSection(m Model, section infoSection) Model {
 	if !m.ShowInfo {
 		m = step(m, "i")
 	}
-	for i := 0; i < 5 && m.InfoSection != section; i++ {
+	for i := 0; i < 5 && m.Info.Section != section; i++ {
 		m = step(m, "tab")
 	}
 	return m
@@ -21,23 +21,23 @@ func gotoInfoSection(m Model, section infoSection) Model {
 
 func TestAuthEditSetsCredentialViaEnter(t *testing.T) {
 	m := modelWithStore(t)
-	names := m.authSchemeNames()
+	names := authSchemeNames(m.Spec)
 	if len(names) == 0 {
 		t.Skip("fixture has no security schemes")
 	}
 	m = gotoInfoSection(m, infoAuth)
-	if m.InfoSection != infoAuth {
+	if m.Info.Section != infoAuth {
 		t.Fatalf("expected to reach the Auth section")
 	}
 
 	m = step(m, "enter")
-	if !m.Auth.Editing || m.Auth.Scheme != names[0] {
-		t.Fatalf("expected editing to start for %q, got Editing=%v Scheme=%q", names[0], m.Auth.Editing, m.Auth.Scheme)
+	if !m.Info.Auth.Editing || m.Info.Auth.Scheme != names[0] {
+		t.Fatalf("expected editing to start for %q, got Editing=%v Scheme=%q", names[0], m.Info.Auth.Editing, m.Info.Auth.Scheme)
 	}
 
 	m = typeText(m, "sekret-token")
 	m = step(m, "enter")
-	if m.Auth.Editing {
+	if m.Info.Auth.Editing {
 		t.Errorf("expected editing to stop after enter")
 	}
 	if got := m.Store.LoadAuth().Credentials[names[0]]; got != "sekret-token" {
@@ -47,7 +47,7 @@ func TestAuthEditSetsCredentialViaEnter(t *testing.T) {
 
 func TestAuthEditEscAlsoCommits(t *testing.T) {
 	m := modelWithStore(t)
-	names := m.authSchemeNames()
+	names := authSchemeNames(m.Spec)
 	if len(names) == 0 {
 		t.Skip("fixture has no security schemes")
 	}
@@ -55,7 +55,7 @@ func TestAuthEditEscAlsoCommits(t *testing.T) {
 	m = step(m, "enter")
 	m = typeText(m, "abc")
 	m = step(m, "esc")
-	if m.Auth.Editing {
+	if m.Info.Auth.Editing {
 		t.Errorf("expected Esc to exit edit mode")
 	}
 	if got := m.Store.LoadAuth().Credentials[names[0]]; got != "abc" {
@@ -68,7 +68,7 @@ func TestAuthEditEscAlsoCommits(t *testing.T) {
 
 func TestAuthEditingSwallowsIAndTab(t *testing.T) {
 	m := modelWithStore(t)
-	names := m.authSchemeNames()
+	names := authSchemeNames(m.Spec)
 	if len(names) == 0 {
 		t.Skip("fixture has no security schemes")
 	}
@@ -78,31 +78,31 @@ func TestAuthEditingSwallowsIAndTab(t *testing.T) {
 	// close the popup / switch sections while editing.
 	m = typeText(m, "in")
 	m = step(m, "tab")
-	if !m.ShowInfo || !m.Auth.Editing {
+	if !m.ShowInfo || !m.Info.Auth.Editing {
 		t.Fatalf("expected popup to stay open and editing to continue")
 	}
-	if m.InfoSection != infoAuth {
+	if m.Info.Section != infoAuth {
 		t.Errorf("expected Tab to be swallowed by the credential input, not switch sections")
 	}
-	if m.Auth.Input.Value() != "in" {
-		t.Errorf("expected 'i' typed into the input, got %q", m.Auth.Input.Value())
+	if m.Info.Auth.Input.Value() != "in" {
+		t.Errorf("expected 'i' typed into the input, got %q", m.Info.Auth.Input.Value())
 	}
 }
 
 func TestEnvironmentAddActivateDelete(t *testing.T) {
 	m := modelWithStore(t)
 	m = gotoInfoSection(m, infoEnvironments)
-	if m.InfoSection != infoEnvironments {
+	if m.Info.Section != infoEnvironments {
 		t.Fatalf("expected to reach Environments section")
 	}
 
 	m = step(m, "n")
-	if !m.Env.AddingEnv {
+	if !m.Info.Environments.AddingEnv {
 		t.Fatalf("expected 'n' to start adding an environment")
 	}
 	m = typeText(m, "dev")
 	m = step(m, "enter")
-	if m.Env.AddingEnv {
+	if m.Info.Environments.AddingEnv {
 		t.Errorf("expected add-env mode to close")
 	}
 	envs := m.Store.LoadEnvironments().Environments
@@ -137,12 +137,12 @@ func TestEnvironmentVariableAddEditDelete(t *testing.T) {
 	m = gotoInfoSection(m, infoEnvironments)
 
 	m = step(m, "e") // enter edit view for the (only, selected) environment
-	if m.Env.View != envViewEdit {
+	if m.Info.Environments.SubView != envViewEdit {
 		t.Fatalf("expected 'e' to enter variable-edit view")
 	}
 
 	m = step(m, "i") // cursor starts on the add-new row
-	if !m.Env.InsertingVar || !m.Env.IsNewVar {
+	if !m.Info.Environments.InsertingVar || !m.Info.Environments.IsNewVar {
 		t.Fatalf("expected add-new-variable insert mode")
 	}
 	m = typeText(m, "API_KEY")
@@ -156,10 +156,10 @@ func TestEnvironmentVariableAddEditDelete(t *testing.T) {
 	}
 
 	// Edit the existing row back to cursor 0 and re-edit its value.
-	m.Env.VarCursor = 0
+	m.Info.Environments.VarCursor = 0
 	m = step(m, "i")
-	if m.Env.IsNewVar || m.Env.EditingKey != "API_KEY" {
-		t.Fatalf("expected to edit the existing API_KEY row, got IsNewVar=%v EditingKey=%q", m.Env.IsNewVar, m.Env.EditingKey)
+	if m.Info.Environments.IsNewVar || m.Info.Environments.EditingKey != "API_KEY" {
+		t.Fatalf("expected to edit the existing API_KEY row, got IsNewVar=%v EditingKey=%q", m.Info.Environments.IsNewVar, m.Info.Environments.EditingKey)
 	}
 	m = step(m, "tab") // move to value field
 	m = typeText(m, "-v2")
@@ -169,7 +169,7 @@ func TestEnvironmentVariableAddEditDelete(t *testing.T) {
 		t.Errorf("expected value updated, got %+v", vars)
 	}
 
-	m.Env.VarCursor = 0
+	m.Info.Environments.VarCursor = 0
 	m = step(m, "x")
 	vars = m.Store.LoadEnvironments().Environments[0].Variables
 	if len(vars) != 0 {
@@ -177,7 +177,7 @@ func TestEnvironmentVariableAddEditDelete(t *testing.T) {
 	}
 
 	m = step(m, "esc")
-	if m.Env.View != envViewList {
+	if m.Info.Environments.SubView != envViewList {
 		t.Errorf("expected Esc to return to the environment list")
 	}
 }
@@ -217,17 +217,17 @@ func TestDisplayOr(t *testing.T) {
 
 func TestQuitGuardedWhileEditingAuthOrEnvText(t *testing.T) {
 	m := modelWithStore(t)
-	names := m.authSchemeNames()
+	names := authSchemeNames(m.Spec)
 	if len(names) == 0 {
 		t.Skip("fixture has no security schemes")
 	}
 	m = gotoInfoSection(m, infoAuth)
 	m = step(m, "enter")
 	m = typeText(m, "q")
-	if !m.Auth.Editing || m.Quitting {
+	if !m.Info.Auth.Editing || m.Quitting {
 		t.Errorf("expected 'q' to type into the credential field, not quit")
 	}
-	if m.Auth.Input.Value() != "q" {
-		t.Errorf("expected literal 'q' typed, got %q", m.Auth.Input.Value())
+	if m.Info.Auth.Input.Value() != "q" {
+		t.Errorf("expected literal 'q' typed, got %q", m.Info.Auth.Input.Value())
 	}
 }

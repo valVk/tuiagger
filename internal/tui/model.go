@@ -66,13 +66,8 @@ type Model struct {
 	ShowHelp   bool
 	HelpScroll int
 
-	ShowInfo     bool
-	InfoSection  infoSection
-	ServerCursor int
-	AuthCursor   int
-	EnvCursor    int
-	Auth         authEditState
-	Env          envEditState
+	ShowInfo bool
+	Info     infoPopupState
 
 	// Source is the collection/path/URL the spec was loaded from, kept for
 	// Ctrl+R reload (re-runs openapi.ParseOpenAPISpec against it).
@@ -166,7 +161,7 @@ func (m Model) isEditingText() bool {
 	return m.TryIt.EditingPath || m.TryIt.ParamEditing || m.TryIt.EditingBody ||
 		m.Manual.EditingPath || m.Manual.ParamEditing || m.Manual.EditingBody ||
 		m.Manual.ShowSaveDialog || m.Mode == ModeRenameTag ||
-		m.Auth.Editing || m.Env.InsertingVar || m.Env.AddingEnv
+		m.Info.Auth.Editing || m.Info.Environments.InsertingVar || m.Info.Environments.AddingEnv
 }
 
 func (m Model) isCustomTag(name string) bool {

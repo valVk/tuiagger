@@ -152,6 +152,21 @@ func (m Model) renderHeader() string {
 	return style.Render(left + strings.Repeat(" ", gap) + right)
 }
 
+// activeEnvName matches App.tsx's `envs.activeEnv?.name`, shown as a badge
+// in the header bar — reads Store directly rather than through the info
+// popup's environmentsPanelState, since the header needs it regardless of
+// whether the popup is even open.
+func (m Model) activeEnvName() string {
+	if m.Store == nil {
+		return ""
+	}
+	s := m.Store.LoadEnvironments()
+	if s.ActiveIndex < 0 || s.ActiveIndex >= len(s.Environments) {
+		return ""
+	}
+	return s.Environments[s.ActiveIndex].Name
+}
+
 func (m Model) renderStatusBar() string {
 	staticHints := []hint{{"q", "quit"}, {"i", "info"}, {"?", "help"}, {"Ctrl+r", "reload"}}
 

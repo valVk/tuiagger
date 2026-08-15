@@ -73,7 +73,7 @@ func TestInfoPopupOpensAndCloses(t *testing.T) {
 	if !m.ShowInfo {
 		t.Fatalf("expected info popup open")
 	}
-	if m.InfoSection != infoServers {
+	if m.Info.Section != infoServers {
 		t.Errorf("expected to open on the Servers section")
 	}
 	out := m.View()
@@ -109,9 +109,9 @@ func TestInfoPopupServerSelectionUpdatesSelectedServerAndCloses(t *testing.T) {
 
 func TestInfoPopupTabCyclesSections(t *testing.T) {
 	m := step(sizedModel(t), "i")
-	first := m.InfoSection
+	first := m.Info.Section
 	m = step(m, "tab")
-	if m.InfoSection == first {
+	if m.Info.Section == first {
 		t.Errorf("expected Tab to move to a different section")
 	}
 }
@@ -122,7 +122,7 @@ func TestInfoPopupSkipsAuthWhenNoSecuritySchemes(t *testing.T) {
 		t.Skip("fixture has security schemes; this test wants none")
 	}
 	m = step(m, "i", "tab")
-	if m.InfoSection == infoAuth {
+	if m.Info.Section == infoAuth {
 		t.Errorf("expected auth section to be skipped when there are no security schemes")
 	}
 }

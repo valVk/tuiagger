@@ -104,9 +104,17 @@ in the final stage — same pattern as last time.
       already-well-tested internals just to match the naming convention —
       `Update`/`View` are the new component-contract entry points, the
       lower-level methods are unchanged plumbing underneath.
-- [ ] Stage 2 — Split infopopup.go into `ServersPanel`/`AuthPanel`/
-      `EnvironmentsPanel` (each own state struct + `Update`/`View`), with
-      `InfoPopup` shrinking to an `InfoSection`-keyed 3-way dispatch.
+- [x] Stage 2 — Split infopopup.go into `serversPanelState`/
+      `authPanelState`/`environmentsPanelState` (infopopup_servers.go/
+      infopopup_auth.go/infopopup_env.go), each with its own state +
+      Update-shaped methods + View. `infoPopupState` (infopopup.go) is the
+      thin parent — owns which section is active, dispatches to whichever
+      one. `handleInfoKey` is the real Mode-routed Update; the three panels
+      underneath keep richer per-section signatures (string key + explicit
+      context args), the same convention headerTableState already
+      established. `activeEnvName` (used by the header bar independent of
+      the popup) moved to view.go rather than into environmentsPanelState,
+      since it doesn't touch that component's own state.
 - [ ] Stage 3 — Mechanical renames: `HelpPopup`, `SaveDialog`,
       `RenameTagPopup` get `Init`/`Update`/`View` method names (low-risk,
       fast — bodies unchanged).
