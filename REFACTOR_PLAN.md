@@ -152,10 +152,15 @@ in the final stage — same pattern as last time.
       Store-derived data every mode reads) — same call as TryIt/Manual in
       Stage 4, file-locality is the real win here, not an owned-value
       boundary that would just duplicate root state.
-- [ ] Stage 6 — Browse extraction: the default (non-try-it) right-panel
-      endpoint-doc view becomes its own component, giving browse mode
-      parity with TryIt/Manual as a first-class component instead of
-      inlined `view.go` logic.
+- [x] Stage 6 — Browse extraction: `handleRightPanelKey`/
+      `sortedResponseCodes` (model.go) and `renderTagLines`/
+      `renderEndpointLines` (view.go) moved into new browse.go — browse
+      mode's key handling and content rendering, giving it its own file
+      alongside every other mode. `renderRightPanel` (the bordered-box +
+      scroll-clamp chrome shared by browse *and* try-it-out) stays in
+      view.go as shared panel infrastructure, same reasoning as keeping
+      `paramEditWidgets`/`renderCustomParamRow` shared rather than
+      duplicated per mode.
 - [ ] Stage 7 — Root Model becomes a thin dispatcher. `Update`/`View`
       shrink to chrome guards + component dispatch; delete now-dead
       bespoke `handleXKey`/`renderXLines` wrapper functions in

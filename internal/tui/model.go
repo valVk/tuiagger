@@ -6,8 +6,6 @@
 package tui
 
 import (
-	"sort"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/request"
@@ -489,36 +487,4 @@ func (m Model) scrollToResponse() int {
 	// rendering already pads a too-short `visible` slice with blank lines,
 	// so this is safe.
 	return responseStart
-}
-
-func (m Model) handleRightPanelKey(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "j", "down":
-		m.RightScroll++
-		return m, nil
-	case "k", "up":
-		m.RightScroll = max(0, m.RightScroll-1)
-		return m, nil
-	case "g":
-		m.RightScroll = 0
-		return m, nil
-	case "/":
-		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
-			codes := sortedResponseCodes(item.Endpoint)
-			if len(codes) > 0 {
-				m.ResponseTab = (m.ResponseTab + 1) % len(codes)
-			}
-		}
-		return m, nil
-	}
-	return m, nil
-}
-
-func sortedResponseCodes(ep *openapi.ParsedEndpoint) []string {
-	var codes []string
-	for _, r := range ep.Operation.Responses {
-		codes = append(codes, r.Status)
-	}
-	sort.Strings(codes)
-	return codes
 }
