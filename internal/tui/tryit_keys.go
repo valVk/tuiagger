@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/valVK/tuiagger/internal/bodyformat"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/storage"
 )
@@ -315,7 +316,7 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			contentType := selectedContentType(ep, m.TryIt.ContentTypeTab)
 			if schema := selectedSchema(ep.Operation.RequestBody.Content, contentType); schema != nil {
 				if scaffolded := openapi.ScaffoldPlaceholder(schema); scaffolded != nil {
-					m.TryIt.Body = encodeBody(contentType, scaffolded)
+					m.TryIt.Body = bodyformat.Encode(contentType, scaffolded)
 				}
 			}
 		}
@@ -345,7 +346,7 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				contentType := types[m.TryIt.ContentTypeTab]
 				if schema := selectedSchema(ep.Operation.RequestBody.Content, contentType); schema != nil {
 					if scaffolded := openapi.ScaffoldFakeBody(schema); scaffolded != nil {
-						m.TryIt.Body = encodeBody(contentType, scaffolded)
+						m.TryIt.Body = bodyformat.Encode(contentType, scaffolded)
 					}
 				}
 			}

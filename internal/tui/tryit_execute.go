@@ -4,6 +4,7 @@ import (
 	"maps"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/valVK/tuiagger/internal/bodyformat"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/request"
 	"github.com/valVK/tuiagger/internal/storage"
@@ -125,7 +126,7 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 		// of once up front.
 		if body == "" && requestBody != nil && isWriteMethod(effectiveMethod) {
 			if schema := selectedSchema(requestBody.Content, effectiveContentType); schema != nil {
-				body = encodeBody(effectiveContentType, openapi.ScaffoldFakeBody(schema))
+				body = bodyformat.Encode(effectiveContentType, openapi.ScaffoldFakeBody(schema))
 			}
 		}
 

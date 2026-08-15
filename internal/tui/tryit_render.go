@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/valVK/tuiagger/internal/bodyformat"
 	"github.com/valVK/tuiagger/internal/openapi"
 )
 
@@ -51,7 +52,7 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 		var placeholderLines []string
 		if schema != nil {
 			if scaffold := openapi.ScaffoldPlaceholder(schema); scaffold != nil {
-				placeholderLines = strings.Split(encodeBody(contentType, scaffold), "\n")
+				placeholderLines = strings.Split(bodyformat.Encode(contentType, scaffold), "\n")
 			}
 		}
 		if len(placeholderLines) > 0 {

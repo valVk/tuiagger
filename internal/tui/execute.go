@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/valVK/tuiagger/internal/bodyformat"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/request"
 	"github.com/valVK/tuiagger/internal/storage"
@@ -27,16 +28,13 @@ func buildRequestSpec(servers []openapi.Server, selectedServer int, store *stora
 	envVars, authCreds := loadEnvAndAuth(store)
 	collector.EnvVars = envVars
 
-	interpolatedBody := request.Interpolate(body, envVars)
-	if contentType == "application/x-www-form-urlencoded" {
-		// The BODY box holds encodeFormURLEncoded's human-editable
-		// "key=value" text (see its doc comment), not the real wire
-		// format — encode it here, after {{env}} interpolation has run
-		// against the readable text and not against an already
-		// percent-escaped string (where a literal "{{" would already be
-		// "%7B%7B" and never match).
-		interpolatedBody = formTextToQueryString(interpolatedBody)
-	}
+	// bodyformat.WireEncode runs after {{env}} interpolation, not before —
+	// interpolation must see the human-editable text a form-urlencoded
+	// body is still in at this point, not an already percent-escaped
+	// string (where a literal "{{" would already be "%7B%7B" and never
+	// match). It's a no-op for JSON/XML, so every caller runs it
+	// unconditionally rather than special-casing one content type here.
+	interpolatedBody := bodyformat.WireEncode(contentType, request.Interpolate(body, envVars))
 
 	return request.Spec{
 		Method:            method,
