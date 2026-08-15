@@ -142,9 +142,16 @@ in the final stage — same pattern as last time.
       popup's 3 panels), not every Mode branch. Manual needed no
       changes — already self-contained, no left-panel dependency to
       remove.
-- [ ] Stage 5 — LeftPanel extraction: `handleLeftPanelKey` + the
-      left-panel render slice of view.go + `flatlist.go`'s data become one
-      component.
+- [x] Stage 5 — LeftPanel extraction: `handleLeftPanelKey`/
+      `safeLeftIndex`/`selectedItem`/`toggleTag`/`allExpanded`
+      (model.go) + `renderLeftPanel`/`renderListRow` (view.go) moved into
+      new leftpanel.go, alongside flatlist.go's existing data builder.
+      Kept as Model methods, not a value-type component: LeftIndex/
+      FlatList/ExpandedTags are root-shared (RightScroll/ResponseTab
+      resets belong to the right panel; FlatList is rebuilt from Spec/
+      Store-derived data every mode reads) — same call as TryIt/Manual in
+      Stage 4, file-locality is the real win here, not an owned-value
+      boundary that would just duplicate root state.
 - [ ] Stage 6 — Browse extraction: the default (non-try-it) right-panel
       endpoint-doc view becomes its own component, giving browse mode
       parity with TryIt/Manual as a first-class component instead of

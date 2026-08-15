@@ -6,7 +6,6 @@
 package tui
 
 import (
-	"maps"
 	"sort"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -427,63 +426,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleRightPanelKey(key)
 }
 
-func (m Model) safeLeftIndex() int {
-	if len(m.FlatList) == 0 {
-		return 0
-	}
-	if m.LeftIndex >= len(m.FlatList) {
-		return len(m.FlatList) - 1
-	}
-	return m.LeftIndex
-}
-
-func (m Model) selectedItem() *FlatListItem {
-	if len(m.FlatList) == 0 {
-		return nil
-	}
-	return &m.FlatList[m.safeLeftIndex()]
-}
-
-func (m Model) handleLeftPanelKey(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "j", "down":
-		m.LeftIndex = min(m.safeLeftIndex()+1, len(m.FlatList)-1)
-		m.RightScroll = 0
-		m.ResponseTab = 0
-		return m, nil
-	case "k", "up":
-		m.LeftIndex = max(m.safeLeftIndex()-1, 0)
-		m.RightScroll = 0
-		m.ResponseTab = 0
-		return m, nil
-	case "g":
-		m.LeftIndex = 0
-		m.RightScroll = 0
-		m.ResponseTab = 0
-		return m, nil
-	case "G":
-		m.LeftIndex = max(0, len(m.FlatList)-1)
-		m.RightScroll = 0
-		m.ResponseTab = 0
-		return m, nil
-	case "enter":
-		if item := m.selectedItem(); item != nil && item.Type == ItemTag {
-			m.toggleTag(item.TagName)
-		}
-		return m, nil
-	case "c":
-		m.ExpandedTags = make(map[string]bool)
-		m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
-		m.LeftIndex = 0
-		return m, nil
-	case "x":
-		m.ExpandedTags = allExpanded(m.AllTags)
-		m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
-		return m, nil
-	}
-	return m, nil
-}
-
 // scrollToResponse computes the right-panel scroll offset that brings the
 // just-arrived response into view, replicating renderRightPanel's own
 // layout math (leftWidth/rightWidth/inner) so Update can decide the target
@@ -570,22 +512,6 @@ func (m Model) handleRightPanelKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
-}
-
-func (m *Model) toggleTag(tagName string) {
-	next := make(map[string]bool, len(m.ExpandedTags))
-	maps.Copy(next, m.ExpandedTags)
-	next[tagName] = !next[tagName]
-	m.ExpandedTags = next
-	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
-}
-
-func allExpanded(tags []string) map[string]bool {
-	m := make(map[string]bool, len(tags))
-	for _, t := range tags {
-		m[t] = true
-	}
-	return m
 }
 
 func sortedResponseCodes(ep *openapi.ParsedEndpoint) []string {
