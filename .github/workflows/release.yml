@@ -53,13 +53,14 @@ jobs:
           path: ${{ steps.package.outputs.asset }}
 
       - name: Record sha256
-        run: echo "${{ steps.package.outputs.sha256 }}  ${{ steps.package.outputs.asset }}" >> checksum.txt
+        run: |
+          echo "${{ steps.package.outputs.sha256 }}  ${{ steps.package.outputs.asset }}" > checksum-${{ matrix.goos }}-${{ matrix.goarch }}.txt
 
       - name: Upload checksum
         uses: actions/upload-artifact@v4
         with:
           name: checksum-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: checksum.txt
+          path: checksum-${{ matrix.goos }}-${{ matrix.goarch }}.txt
 
   release:
     needs: build
@@ -78,11 +79,11 @@ jobs:
       - name: Collect checksums
         id: shas
         run: |
-          cat dist/checksum.txt
+          cat dist/checksum-*.txt
           for f in darwin_arm64 darwin_amd64 linux_amd64 linux_arm64; do
             goos=${f%_*}
             goarch=${f#*_}
-            sha=$(grep "tuiagger_${goos}_${goarch}.tar.gz" dist/checksum.txt | cut -d' ' -f1)
+            sha=$(grep "tuiagger_${goos}_${goarch}.tar.gz" dist/checksum-${goos}-${goarch}.txt | cut -d' ' -f1)
             echo "$f=$sha" >> "$GITHUB_OUTPUT"
           done
 
