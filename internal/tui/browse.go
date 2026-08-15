@@ -271,7 +271,7 @@ func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, active bool, widt
 		default:
 			if schema := firstSchema(op.RequestBody.Content); schema != nil {
 				for l := range strings.SplitSeq(openapi.FormatSchema(schema, 0), "\n") {
-					lines = append(lines, dimStyle.Render(l))
+					lines = append(lines, colorizeSchemaLine(l))
 				}
 			}
 		}

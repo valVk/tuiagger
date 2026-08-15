@@ -48,7 +48,7 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 		}
 		if len(placeholderLines) > 0 {
 			for _, l := range placeholderLines {
-				content = append(content, dimStyle.Render(l))
+				content = append(content, colorizeJSONLine(l))
 			}
 			hint := "j: focus"
 			if m.TryIt.BodyFocused {

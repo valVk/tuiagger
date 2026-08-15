@@ -482,7 +482,7 @@ func renderResponseTabs(op *openapi.Operation, activeTab int, active bool) []str
 	schema := firstSchema(resp.Content)
 	if schema != nil {
 		for l := range strings.SplitSeq(openapi.FormatSchema(schema, 0), "\n") {
-			lines = append(lines, " "+dimStyle.Render(l))
+			lines = append(lines, " "+colorizeSchemaLine(l))
 		}
 	}
 	return lines
