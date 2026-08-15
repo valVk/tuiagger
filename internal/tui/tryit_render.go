@@ -48,17 +48,17 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 		}
 		if len(placeholderLines) > 0 {
 			for _, l := range placeholderLines {
-				content = append(content, dimStyle.Render(l))
+				content = append(content, colorizeJSONLine(l))
 			}
 			hint := "j: focus"
 			if m.TryIt.BodyFocused {
-				hint = "i: edit | k: back"
+				hint = "i: edit"
 			}
 			content = append(content, dimStyle.Render(hint))
 		} else {
 			hint := "j to focus, i to edit"
 			if m.TryIt.BodyFocused {
-				hint = "i: edit | k: back to params"
+				hint = "i: edit"
 			}
 			content = append(content, dimStyle.Render(hint))
 		}
@@ -76,9 +76,18 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 		// keystroke via onChange, so Esc doesn't truly cancel anything
 		// there either — just stops editing, same as this rewrite).
 		content = []string{m.TryIt.BodyInput.View(), dimStyle.Render("Enter: newline  Esc: done")}
-	// Matches TS: no hint is shown once the body is non-empty and not
-	// being edited — RightPanel.tsx's hint text only ever renders inside
-	// the `!editingBody && !body` branch above.
+	case m.TryIt.BodyFocused:
+		// Deliberate divergence from TS, not a port of it: RightPanel.tsx's
+		// hint text only ever renders inside the `!editingBody && !body`
+		// branch above — once the body has content (the common case,
+		// since try-it-out auto-scaffolds one on entry, see enterTryIt),
+		// the 'i'/'k' shortcuts go silent with no way to discover them
+		// while BODY is actually focused. Show the same focus hint here
+		// too — found via a user report ("Body does not show the
+		// shortcut i if active"). Just "i: edit", not "| k: back to
+		// params" — a user found that half redundant/extra once shown
+		// alongside actual content.
+		content = append(strings.Split(m.TryIt.Body, "\n"), dimStyle.Render("i: edit"))
 	default:
 		content = strings.Split(m.TryIt.Body, "\n")
 	}
@@ -196,14 +205,21 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) ([]string
 	lines = append(lines, "", boldStyle.Render("PARAMETERS")+dimStyle.Render(" j/k: move | i: edit | d: toggle | x: del | c: type"))
 	lines = append(lines, paramTableHeader())
 	lines = append(lines, dimStyle.Render(strings.Repeat("─", width)))
+	// paramsActive matches manual_render.go's own paramsActive gate — a
+	// PARAMETERS row shouldn't show as selected while HEADERS or BODY
+	// currently owns focus, the same as HEADERS' own renderHeadersSection
+	// requires `focused` before highlighting a row (found via a user
+	// report that PARAMETERS looked "always active" regardless of which
+	// section was actually focused).
+	paramsActive := !m.TryIt.HeaderTable.Focused && !m.TryIt.BodyFocused
 	for i, p := range params {
-		selected := i == m.TryIt.ParamCursor
+		selected := paramsActive && i == m.TryIt.ParamCursor
 		editing := selected && m.TryIt.ParamEditing
 		editingView := ""
 		if editing {
 			editingView = m.TryIt.HeaderTable.ValueInput.View()
 		}
-		if selected && !m.TryIt.BodyFocused {
+		if selected {
 			cursorLine = len(lines)
 		}
 		lines = append(lines, renderParamRow(paramRowState{
@@ -213,16 +229,16 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) ([]string
 	}
 	for i, p := range custom {
 		rowIndex := len(params) + i
-		selected := rowIndex == m.TryIt.ParamCursor
+		selected := paramsActive && rowIndex == m.TryIt.ParamCursor
 		editing := selected && m.TryIt.ParamEditing
-		if selected && !m.TryIt.BodyFocused {
+		if selected {
 			cursorLine = len(lines)
 		}
 		lines = append(lines, renderCustomParamRow(p, selected, editing, widgets))
 	}
 	addRowIndex := len(params) + len(custom)
-	addSelected := addRowIndex == m.TryIt.ParamCursor
-	if addSelected && !m.TryIt.BodyFocused {
+	addSelected := paramsActive && addRowIndex == m.TryIt.ParamCursor
+	if addSelected {
 		cursorLine = len(lines)
 	}
 	lines = append(lines, renderAddParamRow(addSelected, addSelected && m.TryIt.ParamEditing, widgets))

@@ -54,14 +54,14 @@ func TestHelpPopupBlocksOtherKeysWhileOpen(t *testing.T) {
 func TestHelpPopupScrollClamped(t *testing.T) {
 	m := step(sizedModel(t), "?")
 	m = step(m, "k") // already at top, must clamp not go negative
-	if m.HelpScroll != 0 {
-		t.Errorf("expected scroll clamped at 0, got %d", m.HelpScroll)
+	if m.Help.Scroll != 0 {
+		t.Errorf("expected scroll clamped at 0, got %d", m.Help.Scroll)
 	}
 	m = step(m, "G")
-	afterG := m.HelpScroll
+	afterG := m.Help.Scroll
 	m = step(m, "j")
-	if m.HelpScroll != afterG {
-		t.Errorf("expected scroll clamped at max, got %d want %d", m.HelpScroll, afterG)
+	if m.Help.Scroll != afterG {
+		t.Errorf("expected scroll clamped at max, got %d want %d", m.Help.Scroll, afterG)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestInfoPopupOpensAndCloses(t *testing.T) {
 	if !m.ShowInfo {
 		t.Fatalf("expected info popup open")
 	}
-	if m.InfoSection != infoServers {
+	if m.Info.Section != infoServers {
 		t.Errorf("expected to open on the Servers section")
 	}
 	out := m.View()
@@ -109,9 +109,9 @@ func TestInfoPopupServerSelectionUpdatesSelectedServerAndCloses(t *testing.T) {
 
 func TestInfoPopupTabCyclesSections(t *testing.T) {
 	m := step(sizedModel(t), "i")
-	first := m.InfoSection
+	first := m.Info.Section
 	m = step(m, "tab")
-	if m.InfoSection == first {
+	if m.Info.Section == first {
 		t.Errorf("expected Tab to move to a different section")
 	}
 }
@@ -122,7 +122,7 @@ func TestInfoPopupSkipsAuthWhenNoSecuritySchemes(t *testing.T) {
 		t.Skip("fixture has security schemes; this test wants none")
 	}
 	m = step(m, "i", "tab")
-	if m.InfoSection == infoAuth {
+	if m.Info.Section == infoAuth {
 		t.Errorf("expected auth section to be skipped when there are no security schemes")
 	}
 }

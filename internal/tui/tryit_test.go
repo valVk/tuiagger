@@ -320,7 +320,7 @@ func TestExecuteWithoutChangesDoesNotMarkOverridden(t *testing.T) {
 	next2, _ := m.Update(msg)
 	m = next2.(Model)
 
-	if m.Response == nil {
+	if m.Viewer.Response == nil {
 		t.Fatalf("expected a response")
 	}
 	if got := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); got != nil {
@@ -387,7 +387,7 @@ func TestResponseScrollsIntoViewAfterExecute(t *testing.T) {
 	next2, _ := m.Update(msg)
 	m = next2.(Model)
 
-	if m.Response == nil {
+	if m.Viewer.Response == nil {
 		t.Fatalf("expected a response")
 	}
 	if m.RightScroll == 0 {
@@ -464,6 +464,123 @@ func TestTryItAutoScrollsToKeepSelectedParamVisible(t *testing.T) {
 	// bottom of a height-20 terminal.
 	if !strings.Contains(out, "\x1b[36m>") {
 		t.Errorf("expected the selected param row's cursor to be visible, got:\n%s", out)
+	}
+}
+
+// TestScrollPastBodyWhenFocused is a regression test: a user reported
+// being unable to scroll down in try-it-out mode once the BODY section was
+// focused. renderTryItLines pins its auto-scroll cursorLine to the BODY
+// box's first line every render, and the old shared scrollToShow helper
+// snapped the scroll position back up to that line any time it drifted
+// below it — so once the box scrolled into view, 'j' had no visible
+// effect. Fixed by handleBodyFocusedKey gaining a "j"/"down" case and
+// renderRightPanel switching to the one-directional scrollToShowBelow
+// while BODY is focused (but not being actively edited).
+func TestScrollPastBodyWhenFocused(t *testing.T) {
+	m := New(loadTestSpec(t), "")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 20}) // short terminal forces scrolling
+	m = next.(Model)
+	m = step(m, "x") // expand all tags so every endpoint row is in FlatList
+	found := false
+	for i, item := range m.FlatList {
+		if item.Type == ItemEndpoint && item.Endpoint.Operation.RequestBody != nil {
+			m.LeftIndex = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Skip("no endpoint with a request body in fixture")
+	}
+	m = step(m, "t")
+
+	// Jump straight to BODY focus (past the last param row).
+	params := sortedParameters(m.selectedItem().Endpoint.Operation.Parameters)
+	for range len(params) + 1 {
+		m = step(m, "j")
+	}
+	if !m.TryIt.BodyFocused {
+		t.Fatalf("setup: expected BODY to be focused, got ParamCursor=%d BodyFocused=%v", m.TryIt.ParamCursor, m.TryIt.BodyFocused)
+	}
+
+	before := m.RightScroll
+	for range 20 {
+		m = step(m, "j")
+	}
+	if m.RightScroll <= before {
+		t.Fatalf("expected RightScroll to increase while scrolling past a focused BODY, stayed at %d", m.RightScroll)
+	}
+
+	// The Responses heading lives after the BODY section in the rendered
+	// output — it must actually become reachable, not just increment a
+	// number nothing reads.
+	out := m.View()
+	if !strings.Contains(out, "Execute (e)") {
+		t.Skip("terminal too small to assert on visible content in this environment")
+	}
+	if !strings.Contains(out, "Responses") {
+		t.Errorf("expected scrolling past BODY to reveal the Responses section, got:\n%s", out)
+	}
+}
+
+// TestScrollBackUpAfterScrollingPastBody is a regression test: a follow-up
+// user report on the fix above — scrolling down past a focused BODY
+// worked, but 'k'/'up' just unfocused straight back to PARAMETERS instead
+// of first scrolling back up through what 'j' had scrolled past.
+// BodyScrollFloor makes 'k' undo 'j' presses one at a time (mirroring the
+// scroll-down direction) and only unfocus once back at the floor.
+func TestScrollBackUpAfterScrollingPastBody(t *testing.T) {
+	m := New(loadTestSpec(t), "")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	m = next.(Model)
+	m = step(m, "x")
+	found := false
+	for i, item := range m.FlatList {
+		if item.Type == ItemEndpoint && item.Endpoint.Operation.RequestBody != nil {
+			m.LeftIndex = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Skip("no endpoint with a request body in fixture")
+	}
+	m = step(m, "t")
+
+	params := sortedParameters(m.selectedItem().Endpoint.Operation.Parameters)
+	for range len(params) + 1 {
+		m = step(m, "j")
+	}
+	floor := m.TryIt.BodyScrollFloor
+
+	const downPresses = 10
+	for range downPresses {
+		m = step(m, "j")
+	}
+	if m.RightScroll != floor+downPresses {
+		t.Fatalf("setup: expected RightScroll at floor+%d, got %d (floor %d)", downPresses, m.RightScroll, floor)
+	}
+
+	for i := range downPresses {
+		m = step(m, "k")
+		if !m.TryIt.BodyFocused {
+			t.Fatalf("unfocused early after %d 'k' presses, expected %d before reaching the floor", i+1, downPresses)
+		}
+		want := floor + downPresses - (i + 1)
+		if m.RightScroll != want {
+			t.Errorf("after %d 'k' presses: RightScroll = %d, want %d", i+1, m.RightScroll, want)
+		}
+	}
+	if m.RightScroll != floor {
+		t.Fatalf("expected RightScroll back at floor %d, got %d", floor, m.RightScroll)
+	}
+
+	// One more 'k' at the floor unfocuses back to PARAMETERS, same as
+	// before this fix (unchanged single-press behavior once nothing's
+	// left to scroll back through).
+	m = step(m, "k")
+	if m.TryIt.BodyFocused {
+		t.Errorf("expected 'k' at the scroll floor to unfocus BODY, still focused")
 	}
 }
 
@@ -564,6 +681,85 @@ func TestKAtFirstParamRowEntersHeadersFocus(t *testing.T) {
 	}
 }
 
+// TestParamsRowNotHighlightedWhileHeadersFocused is a regression test: a
+// user reported PARAMETERS looking "always active" — its first row stayed
+// visually selected (and, worse, kept stealing the auto-scroll cursorLine
+// from HEADERS) even after focus moved up into HEADERS. renderTryItLines
+// never gated PARAMETERS' `selected`/cursorLine on HeaderTable.Focused, only
+// on BodyFocused — manual_render.go's paramsActive already did this
+// correctly for the manual builder; renderTryItLines just hadn't picked up
+// the same convention.
+func TestParamsRowNotHighlightedWhileHeadersFocused(t *testing.T) {
+	m := firstEndpointModel(t)
+	m = step(m, "t", "k") // enter try-it, focus HEADERS
+	if !m.TryIt.HeaderTable.Focused {
+		t.Fatalf("setup: expected HEADERS focused")
+	}
+	if m.TryIt.ParamCursor != 0 {
+		t.Fatalf("setup: expected ParamCursor still at 0, got %d", m.TryIt.ParamCursor)
+	}
+
+	lines, cursorLine := m.renderTryItLines(m.TryIt.Endpoint, 100)
+	if cursorLine < 0 || cursorLine >= len(lines) {
+		t.Fatalf("expected a valid cursorLine, got %d (len %d)", cursorLine, len(lines))
+	}
+	// The auto-scroll target must be inside the HEADERS block (before the
+	// "PARAMETERS" heading), not row 0 of the PARAMETERS table.
+	headingIdx := -1
+	for i, l := range lines {
+		if strings.HasPrefix(stripANSI(l), "PARAMETERS") {
+			headingIdx = i
+			break
+		}
+	}
+	if headingIdx < 0 {
+		t.Fatalf("expected a PARAMETERS heading in the rendered lines")
+	}
+	if cursorLine >= headingIdx {
+		t.Errorf("expected cursorLine to stay within HEADERS (before line %d), got %d: %q", headingIdx, cursorLine, stripANSI(lines[cursorLine]))
+	}
+}
+
+// TestBodyHintShownWhileFocusedEvenWithContent is a regression test: a
+// user reported the BODY box showing no 'i' shortcut hint once it had
+// content — renderTryItBodySection's hint text only ever rendered inside
+// the empty-body branch, so the moment enterTryIt auto-scaffolded a body
+// (the common case, not the exception), the hint silently disappeared
+// even while BODY was focused.
+func TestBodyHintShownWhileFocusedEvenWithContent(t *testing.T) {
+	m := New(loadTestSpec(t), "")
+	m = step(m, "enter", "j") // expand first tag, land on its first endpoint
+	found := false
+	for i, item := range m.FlatList {
+		if item.Type == ItemEndpoint && item.Endpoint.Operation.RequestBody != nil {
+			m.LeftIndex = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Skip("no endpoint with a request body in fixture")
+	}
+	m = step(m, "t")
+	if m.TryIt.Body == "" {
+		t.Fatalf("setup: expected enterTryIt to auto-scaffold a non-empty body")
+	}
+
+	params := sortedParameters(m.selectedItem().Endpoint.Operation.Parameters)
+	for range len(params) + 1 {
+		m = step(m, "j")
+	}
+	if !m.TryIt.BodyFocused {
+		t.Fatalf("setup: expected BODY focused")
+	}
+
+	lines := m.renderTryItBodySection(m.TryIt.Endpoint.Operation, 100)
+	out := strings.Join(lines, "\n")
+	if !strings.Contains(stripANSI(out), "i: edit") {
+		t.Errorf("expected an 'i: edit' hint in the focused, non-empty BODY box, got:\n%s", stripANSI(out))
+	}
+}
+
 // TestAddHeaderViaHeadersSection exercises the full add-header flow: enter
 // HEADERS focus, 'i' to start adding, type a name, Tab to the value field,
 // type a value, Enter to commit — matches useHeadersNavigation.ts's
@@ -651,10 +847,10 @@ func TestExecuteMsgClearsLoadingAndSetsResponse(t *testing.T) {
 	if m.Loading {
 		t.Errorf("expected Loading cleared")
 	}
-	if m.Response == nil || m.Response.Status != 200 {
-		t.Errorf("expected response set, got %+v", m.Response)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Errorf("expected response set, got %+v", m.Viewer.Response)
 	}
-	if m.Curl != "curl ..." {
+	if m.Viewer.Curl != "curl ..." {
 		t.Errorf("expected curl set")
 	}
 }

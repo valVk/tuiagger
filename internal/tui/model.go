@@ -6,9 +6,6 @@
 package tui
 
 import (
-	"maps"
-	"sort"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/request"
@@ -55,26 +52,19 @@ type Model struct {
 	RenameTag        renameTagState
 	TagDeleteConfirm string // custom tag name pending 'D' confirmation, "" = none
 
-	Response *request.Response
-	Curl     string
-	Loading  bool
-	Viewer   responseViewer
+	Loading bool
+	Viewer  responseViewer
 
 	HTTPClient request.HTTPClient
 	Store      *storage.Store
 
 	LeftExpanded bool // '[' toggles 30% <-> 50% left panel width, matching App.tsx
 
-	ShowHelp   bool
-	HelpScroll int
+	ShowHelp bool
+	Help     helpPopupState
 
-	ShowInfo     bool
-	InfoSection  infoSection
-	ServerCursor int
-	AuthCursor   int
-	EnvCursor    int
-	Auth         authEditState
-	Env          envEditState
+	ShowInfo bool
+	Info     infoPopupState
 
 	// Source is the collection/path/URL the spec was loaded from, kept for
 	// Ctrl+R reload (re-runs openapi.ParseOpenAPISpec against it).
@@ -168,7 +158,7 @@ func (m Model) isEditingText() bool {
 	return m.TryIt.EditingPath || m.TryIt.ParamEditing || m.TryIt.EditingBody ||
 		m.Manual.EditingPath || m.Manual.ParamEditing || m.Manual.EditingBody ||
 		m.Manual.ShowSaveDialog || m.Mode == ModeRenameTag ||
-		m.Auth.Editing || m.Env.InsertingVar || m.Env.AddingEnv
+		m.Info.Auth.Editing || m.Info.Environments.InsertingVar || m.Info.Environments.AddingEnv
 }
 
 func (m Model) isCustomTag(name string) bool {
@@ -221,20 +211,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case responseMsg:
 		m.Loading = false
-		m.Response = msg.response
-		m.Curl = msg.curl
-		if msg.response != nil {
-			m.Viewer = newResponseViewer(msg.response.Body)
-		}
+		var cmd tea.Cmd
+		m.Viewer, cmd = m.Viewer.Update(msg)
 		m.RightScroll = m.scrollToResponse()
-		return m, nil
+		return m, cmd
 	case yankExpiredMsg:
-		if msg.curl {
-			m.Viewer.YankedCurl = false
-		} else {
-			m.Viewer.Yanked = false
-		}
-		return m, nil
+		var cmd tea.Cmd
+		m.Viewer, cmd = m.Viewer.Update(msg)
+		return m, cmd
 	case reloadMsg:
 		return m.applyReload(msg), nil
 	case tea.KeyMsg:
@@ -258,8 +242,7 @@ func (m Model) applyReload(msg reloadMsg) Model {
 	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
 	m.LeftIndex = m.safeLeftIndex()
 	m.Mode = ModeBrowse
-	m.Response = nil
-	m.Curl = ""
+	m.Viewer = responseViewer{}
 	m.Loading = false
 	m.RightScroll = 0
 	return m
@@ -301,201 +284,74 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleInfoKey(msg)
 	}
 
-	if m.Mode == ModeManual {
+	// Every other mode has its own Update entry point; browse (the
+	// default/fallthrough Mode) has handleBrowseKey in browse.go —
+	// everything past this dispatch used to live inline here, unreachable
+	// once any of the cases above already returned.
+	switch m.Mode {
+	case ModeManual:
 		return m.handleManualKey(msg)
-	}
-	if m.Mode == ModeRenameTag {
+	case ModeRenameTag:
 		return m.handleRenameTagKey(msg)
-	}
-	if m.Mode == ModeTryIt {
+	case ModeTryIt:
 		return m.handleTryItKey(msg)
+	default:
+		return m.handleBrowseKey(msg)
 	}
-
-	// Matches useAppKeyboard.ts's tagDeleteConfirm intercept: takes over
-	// input entirely (browse mode only) until y/n/Esc resolves it.
-	if m.TagDeleteConfirm != "" {
-		switch key {
-		case "y":
-			if m.Store != nil {
-				m.Store.DeleteCustomTag(m.TagDeleteConfirm)
-			}
-			m.TagDeleteConfirm = ""
-			return m.refreshSavedRequests(), nil
-		case "n", "esc":
-			m.TagDeleteConfirm = ""
-			return m, nil
-		}
-		return m, nil
-	}
-
-	// R/D on a custom tag, E/D on a saved request, and 'e' quick-execute all
-	// work regardless of which panel is active, matching
-	// useAppKeyboard.ts's browse-mode handler (checked ahead of h/l/j/k
-	// navigation) — 'e' in particular is bound in a useInput with
-	// isActive: mode === 'browse' only, no panel check, so it must work
-	// from the left panel too, not just after pressing 'l' first.
-	if item := m.selectedItem(); item != nil {
-		switch {
-		case key == "R" && item.Type == ItemTag && m.isCustomTag(item.TagName):
-			return m.enterRenameTag(item.TagName), nil
-		case key == "D" && item.Type == ItemTag && m.isCustomTag(item.TagName):
-			m.TagDeleteConfirm = item.TagName
-			return m, nil
-		case key == "E" && item.Type == ItemSavedRequest:
-			return m.enterManualEdit(item.SavedRequest), nil
-		case key == "D" && item.Type == ItemSavedRequest:
-			if m.Store != nil {
-				m.Store.DeleteSavedRequest(item.SavedRequest.ID)
-			}
-			return m.refreshSavedRequests(), nil
-		case key == "e" && item.Type == ItemEndpoint:
-			cmd := m.quickExecuteCmd(item.Endpoint)
-			m.Loading = true
-			return m, cmd
-		case key == "e" && item.Type == ItemSavedRequest:
-			cmd := m.savedRequestExecuteCmd(item.SavedRequest)
-			m.Loading = true
-			return m, cmd
-		}
-	}
-
-	switch key {
-	case "ctrl+r":
-		m.SpecLoading = true
-		return m, m.reloadCmd()
-	case "?":
-		m.ShowHelp = true
-		m.HelpScroll = 0
-		return m, nil
-	case "i":
-		return m.enterInfo(), nil
-	case "h", "left":
-		m.ActivePanel = PanelLeft
-		return m, nil
-	case "l", "right":
-		m.ActivePanel = PanelRight
-		return m, nil
-	case "[":
-		m.LeftExpanded = !m.LeftExpanded
-		return m, nil
-	case "t":
-		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
-			return m.enterTryIt(), nil
-		}
-		return m, nil
-	case "m":
-		return m.enterManualNew(), nil
-	}
-
-	if m.ActivePanel == PanelLeft {
-		return m.handleLeftPanelKey(key)
-	}
-
-	// Response-viewer keys (J/K/G/v/y/Esc/\) take priority over generic
-	// scroll (j/k/g) when a response is present — distinct key casing means
-	// both coexist without a mode flag, matching the TS app. Lowercase 'g'
-	// is bound by both ResponseViewer.tsx (jump response cursor to top) and
-	// usePanelNavigation.ts (reset panel scroll) as two independent Ink
-	// input handlers that both fire on the same keypress — replicated here
-	// by routing to the viewer and then still falling through to the
-	// generic handler below, rather than picking one.
-	if m.Response != nil {
-		switch key {
-		case "J", "K", "G", "v", "y", "esc", `\`:
-			var cmd tea.Cmd
-			m.Viewer, cmd = m.Viewer.handleKey(key)
-			return m, cmd
-		case "C":
-			// Go-only addition, not a TS port — yanks the generated curl
-			// command to the clipboard, independent of tab/selection state.
-			if m.Curl != "" {
-				var cmd tea.Cmd
-				m.Viewer, cmd = m.Viewer.yankCurl(m.Curl)
-				return m, cmd
-			}
-		case "j", "k":
-			// While actively visual-selecting, lowercase j/k also drive the
-			// response cursor instead of the outer panel scroll — found via
-			// a user report: without this, pressing 'v' then reaching for
-			// the muscle-memory 'j'/'k' (rather than the shifted 'J'/'K'
-			// the hint text actually asks for) just scrolls the panel out
-			// from under the selection, which looks exactly like "can't
-			// expand the selection, it just moves the viewport." Only
-			// active during a selection — outside of one, lowercase j/k
-			// keeps its normal job of reaching content that might be
-			// scrolled out of view above the response section.
-			if m.Viewer.Selecting {
-				viewerKey := "J"
-				if key == "k" {
-					viewerKey = "K"
-				}
-				var cmd tea.Cmd
-				m.Viewer, cmd = m.Viewer.handleKey(viewerKey)
-				return m, cmd
-			}
-		case "g":
-			m.Viewer, _ = m.Viewer.handleKey(key)
-		}
-	}
-
-	return m.handleRightPanelKey(key)
 }
 
-func (m Model) safeLeftIndex() int {
-	if len(m.FlatList) == 0 {
+// rightPanelLayout replicates View()/renderRightPanel's layout math
+// (leftWidth/rightWidth/inner/visibleHeight) — shared by scrollToResponse
+// and clampRightScroll below so both compute scroll positions against the
+// exact same content width/height the next render will actually use.
+func (m Model) rightPanelLayout() (inner, visibleHeight int) {
+	contentHeight := max(m.Height-8, 10)
+	leftWidthPct := 30
+	if m.LeftExpanded {
+		leftWidthPct = 50
+	}
+	leftWidth := max(m.Width*leftWidthPct/100, 20)
+	rightWidth := max(m.Width-leftWidth-2, 20)
+	return max(rightWidth-4, 1), max(contentHeight-2, 1)
+}
+
+// rightPanelLineCount returns how many lines the right panel would render
+// right now for clampRightScroll below — deliberately re-derived rather
+// than cached, the same content-dependent recompute scrollToResponse
+// already does for the same reason (cheap relative to a keypress).
+func (m Model) rightPanelLineCount(inner int) int {
+	if m.Mode == ModeTryIt {
+		if m.TryIt.Endpoint == nil {
+			return 0
+		}
+		lines, _ := m.renderTryItLines(m.TryIt.Endpoint, inner)
+		return len(lines)
+	}
+	item := m.selectedItem()
+	if item == nil {
 		return 0
 	}
-	if m.LeftIndex >= len(m.FlatList) {
-		return len(m.FlatList) - 1
+	switch item.Type {
+	case ItemTag:
+		return len(m.renderTagLines(item.TagName, inner))
+	case ItemEndpoint:
+		return len(m.renderEndpointLines(item.Endpoint, m.ActivePanel == PanelRight, inner))
 	}
-	return m.LeftIndex
+	return 0
 }
 
-func (m Model) selectedItem() *FlatListItem {
-	if len(m.FlatList) == 0 {
-		return nil
-	}
-	return &m.FlatList[m.safeLeftIndex()]
-}
-
-func (m Model) handleLeftPanelKey(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "j", "down":
-		m.LeftIndex = min(m.safeLeftIndex()+1, len(m.FlatList)-1)
-		m.RightScroll = 0
-		m.ResponseTab = 0
-		return m, nil
-	case "k", "up":
-		m.LeftIndex = max(m.safeLeftIndex()-1, 0)
-		m.RightScroll = 0
-		m.ResponseTab = 0
-		return m, nil
-	case "g":
-		m.LeftIndex = 0
-		m.RightScroll = 0
-		m.ResponseTab = 0
-		return m, nil
-	case "G":
-		m.LeftIndex = max(0, len(m.FlatList)-1)
-		m.RightScroll = 0
-		m.ResponseTab = 0
-		return m, nil
-	case "enter":
-		if item := m.selectedItem(); item != nil && item.Type == ItemTag {
-			m.toggleTag(item.TagName)
-		}
-		return m, nil
-	case "c":
-		m.ExpandedTags = make(map[string]bool)
-		m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
-		m.LeftIndex = 0
-		return m, nil
-	case "x":
-		m.ExpandedTags = allExpanded(m.AllTags)
-		m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
-		return m, nil
-	}
-	return m, nil
+// clampRightScroll bounds RightScroll to the range render will actually
+// use. Scroll keys increment/decrement it freely (matching the existing
+// "clamp at render time" pattern already in renderRightPanel), but without
+// this, repeatedly scrolling past the bottom (or, in try-it-out's
+// BODY-focused case, past the top) accumulates a hidden offset that then
+// silently eats an equal number of presses in the other direction before
+// the view visibly moves — found via a user report ("press down 5
+// times... have to press up 5 times up to begin scroll up").
+func (m Model) clampRightScroll() int {
+	inner, visibleHeight := m.rightPanelLayout()
+	total := m.rightPanelLineCount(inner)
+	return min(max(m.RightScroll, 0), max(total-visibleHeight, 0))
 }
 
 // scrollToResponse computes the right-panel scroll offset that brings the
@@ -515,13 +371,7 @@ func (m Model) scrollToResponse() int {
 		return 0
 	}
 
-	leftWidthPct := 30
-	if m.LeftExpanded {
-		leftWidthPct = 50
-	}
-	leftWidth := max(m.Width*leftWidthPct/100, 20)
-	rightWidth := max(m.Width-leftWidth-2, 20)
-	inner := max(rightWidth-4, 1)
+	inner, _ := m.rightPanelLayout()
 
 	var lines []string
 	if m.Mode == ModeTryIt {
@@ -561,52 +411,4 @@ func (m Model) scrollToResponse() int {
 	// rendering already pads a too-short `visible` slice with blank lines,
 	// so this is safe.
 	return responseStart
-}
-
-func (m Model) handleRightPanelKey(key string) (tea.Model, tea.Cmd) {
-	switch key {
-	case "j", "down":
-		m.RightScroll++
-		return m, nil
-	case "k", "up":
-		m.RightScroll = max(0, m.RightScroll-1)
-		return m, nil
-	case "g":
-		m.RightScroll = 0
-		return m, nil
-	case "/":
-		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
-			codes := sortedResponseCodes(item.Endpoint)
-			if len(codes) > 0 {
-				m.ResponseTab = (m.ResponseTab + 1) % len(codes)
-			}
-		}
-		return m, nil
-	}
-	return m, nil
-}
-
-func (m *Model) toggleTag(tagName string) {
-	next := make(map[string]bool, len(m.ExpandedTags))
-	maps.Copy(next, m.ExpandedTags)
-	next[tagName] = !next[tagName]
-	m.ExpandedTags = next
-	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
-}
-
-func allExpanded(tags []string) map[string]bool {
-	m := make(map[string]bool, len(tags))
-	for _, t := range tags {
-		m[t] = true
-	}
-	return m
-}
-
-func sortedResponseCodes(ep *openapi.ParsedEndpoint) []string {
-	var codes []string
-	for _, r := range ep.Operation.Responses {
-		codes = append(codes, r.Status)
-	}
-	sort.Strings(codes)
-	return codes
 }

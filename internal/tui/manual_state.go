@@ -71,8 +71,7 @@ func (m Model) enterManualNew() Model {
 	m.Manual = newManualState()
 	m.Mode = ModeManual
 	m.ActivePanel = PanelRight
-	m.Response = nil
-	m.Curl = ""
+	m.Viewer = responseViewer{}
 	return m
 }
 
@@ -93,15 +92,13 @@ func (m Model) enterManualEdit(sr *storage.SavedRequest) Model {
 	m.Manual = state
 	m.Mode = ModeManual
 	m.ActivePanel = PanelRight
-	m.Response = nil
-	m.Curl = ""
+	m.Viewer = responseViewer{}
 	return m
 }
 
 func (m Model) exitManual() Model {
 	m.Mode = ModeBrowse
-	m.Response = nil
-	m.Curl = ""
+	m.Viewer = responseViewer{}
 	return m
 }
 

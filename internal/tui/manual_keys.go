@@ -47,7 +47,7 @@ func (m Model) handleManualKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "i":
 			m.Manual.EditingBody = true
-			m.Manual.BodyInput.SetValue(m.Manual.Body)
+			m.Manual.BodyInput = setBodyValue(m.Manual.BodyInput, m.Manual.Body)
 			m.Manual.BodyInput.Focus()
 		case "k", "up", "esc":
 			m.Manual.BodyFocused = false

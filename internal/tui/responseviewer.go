@@ -41,10 +41,54 @@ type responseViewer struct {
 	Tab        respTab
 	Yanked     bool
 	YankedCurl bool // distinct from Yanked so the "[...]" feedback names what was actually copied
+
+	// Response/Curl are the component's own copy of the last executed
+	// request's result — owned here (not passed in on every render call by
+	// the root Model) so View only needs layout context (active/width), the
+	// same shape as any other top-level component's View.
+	Response *request.Response
+	Curl     string
 }
 
 func newResponseViewer(body string) responseViewer {
 	return responseViewer{Lines: strings.Split(body, "\n")}
+}
+
+// Update is responseViewer's component entry point — the root Model
+// forwards responseMsg (a completed execute), yankExpiredMsg (its own
+// yank-indicator timer), and tea.KeyMsg (already gated to only the keys
+// the viewer owns — see handleKey's doc comment for why the gating/j-k
+// remap stays a root routing decision rather than moving in here) into
+// this. tea.KeyMsg handling is delegated to the lower-level, directly
+// tested handleKey rather than duplicated.
+func (v responseViewer) Update(msg tea.Msg) (responseViewer, tea.Cmd) {
+	switch msg := msg.(type) {
+	case responseMsg:
+		if msg.response == nil {
+			return v, nil
+		}
+		nv := newResponseViewer(msg.response.Body)
+		nv.Response = msg.response
+		nv.Curl = msg.curl
+		return nv, nil
+	case yankExpiredMsg:
+		if msg.curl {
+			v.YankedCurl = false
+		} else {
+			v.Yanked = false
+		}
+		return v, nil
+	case tea.KeyMsg:
+		return v.handleKey(msg.String())
+	}
+	return v, nil
+}
+
+// View renders the viewer against its own Response/Curl — width/active are
+// layout context supplied by whichever panel is embedding it (try-it-out,
+// browse, or the manual builder), not state the viewer owns itself.
+func (v responseViewer) View(active bool, width int) []string {
+	return v.render(v.Response, v.Curl, active, width)
 }
 
 // yankExpiredMsg clears the transient "[yanked]"/"[curl yanked]" indicator,

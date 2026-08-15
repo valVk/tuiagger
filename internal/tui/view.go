@@ -96,13 +96,13 @@ func (m Model) View() string {
 	var body string
 	switch {
 	case m.ShowHelp:
-		body = m.renderHelpPopup(contentHeight, m.Width)
+		body = m.Help.View(contentHeight, m.Width)
 	case m.ShowInfo:
 		body = m.renderInfoPopup(contentHeight, m.Width)
 	case m.Mode == ModeManual && m.Manual.ShowSaveDialog:
-		body = m.renderSaveDialogOverlay(contentHeight, m.Width)
+		body = m.Manual.SaveDialog.View(contentHeight, m.Width)
 	case m.Mode == ModeRenameTag:
-		body = m.renderRenameTagOverlay(contentHeight, m.Width)
+		body = m.RenameTag.View(contentHeight, m.Width)
 	default:
 		left := m.renderLeftPanel(contentHeight, leftWidth)
 		var right string
@@ -150,6 +150,21 @@ func (m Model) renderHeader() string {
 
 	gap := max(m.Width-4-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return style.Render(left + strings.Repeat(" ", gap) + right)
+}
+
+// activeEnvName matches App.tsx's `envs.activeEnv?.name`, shown as a badge
+// in the header bar — reads Store directly rather than through the info
+// popup's environmentsPanelState, since the header needs it regardless of
+// whether the popup is even open.
+func (m Model) activeEnvName() string {
+	if m.Store == nil {
+		return ""
+	}
+	s := m.Store.LoadEnvironments()
+	if s.ActiveIndex < 0 || s.ActiveIndex >= len(s.Environments) {
+		return ""
+	}
+	return s.Environments[s.ActiveIndex].Name
 }
 
 func (m Model) renderStatusBar() string {
@@ -202,121 +217,6 @@ func (m Model) renderStatusBar() string {
 	return style.Render(left + strings.Repeat(" ", gap) + right)
 }
 
-func (m Model) renderLeftPanel(height, width int) string {
-	active := m.ActivePanel == PanelLeft
-	borderStyle, borderColor := panelBorderStyle(active)
-
-	// boxInner is the box's full interior width (border only, no padding);
-	// inner further subtracts the 1-space margin Padding(0,1) adds — the
-	// budget most row renderers below actually receive. The title's rule
-	// line is built to span boxInner exactly (edge-to-edge, no margin),
-	// matching LeftPanel.tsx's border-bottom Box, which spans full-width
-	// while the title/rows above and below it each carry their own
-	// paddingX={1} — one flat Padding() on this whole box can't reproduce
-	// that (it pads every line uniformly), so the title/rule pair is
-	// hand-built here instead of flowing through the outer Style's Padding.
-	boxInner := max(width-2, 1)
-	inner := max(width-4, 1)
-
-	suffix := ""
-	if active {
-		suffix = dimStyle.Render("(i)")
-	}
-	titleText := boldStyle.Render("ENDPOINTS")
-	if m.Spec != nil {
-		titleText = boldStyle.Render(truncate(m.Spec.Spec.Info.Title, inner))
-	}
-	gap := max(inner-lipgloss.Width(titleText)-lipgloss.Width(suffix), 0)
-	titleLine := " " + titleText + strings.Repeat(" ", gap) + suffix + " "
-	titleRule := dimStyle.Render(strings.Repeat("─", boxInner))
-
-	visibleHeight := max(height-5, 1)
-	selected := m.safeLeftIndex()
-	startIndex := 0
-	if len(m.FlatList) > visibleHeight {
-		half := visibleHeight / 2
-		switch {
-		case selected < half:
-			startIndex = 0
-		case selected > len(m.FlatList)-half-1:
-			startIndex = len(m.FlatList) - visibleHeight
-		default:
-			startIndex = selected - half
-		}
-	}
-	end := min(startIndex+visibleHeight, len(m.FlatList))
-
-	var lines []string
-	for i := startIndex; i < end; i++ {
-		lines = append(lines, m.renderListRow(m.FlatList[i], i == selected, inner))
-	}
-	for len(lines) < visibleHeight {
-		lines = append(lines, "")
-	}
-
-	footer := ""
-	if len(m.FlatList) > visibleHeight {
-		footer = dimStyle.Render(fmt.Sprintf("%d/%d", selected+1, len(m.FlatList)))
-	}
-
-	rowsBlock := lipgloss.NewStyle().Width(boxInner).Padding(0, 1).
-		Render(strings.Join(lines, "\n") + "\n" + footer)
-
-	content := titleLine + "\n" + titleRule + "\n" + rowsBlock
-
-	return lipgloss.NewStyle().
-		Width(boxInner).
-		Height(height).
-		BorderStyle(borderStyle).
-		BorderForeground(borderColor).
-		Render(content)
-}
-
-// renderListRow matches LeftPanel.tsx's row rendering: tag rows show an
-// expand/collapse arrow + item count; endpoint rows prefix a '~' when a
-// saved override exists for that endpoint (path/method/body/params), and
-// highlight the path (not the whole row) when selected.
-func (m Model) renderListRow(item FlatListItem, selected bool, width int) string {
-	if item.Type == ItemTag {
-		arrow := "▶"
-		if m.ExpandedTags[item.TagName] {
-			arrow = "▼"
-		}
-		count := len(m.EndpointsByTag[item.TagName]) + len(m.SavedRequestsByTag[item.TagName])
-		style := boldStyle
-		if selected {
-			style = style.Foreground(lipgloss.Color("6")).Reverse(true)
-		}
-		return style.Render(truncate(arrow+" "+item.TagName, width)) + dimStyle.Render(fmt.Sprintf(" (%d)", count))
-	}
-
-	if item.Type == ItemSavedRequest {
-		sr := item.SavedRequest
-		method := padRight(strings.ToUpper(sr.Method), 6)
-		methodStyle := lipgloss.NewStyle().Foreground(MethodColor(sr.Method)).Bold(true)
-		name := truncate(sr.Name+"*", max(width-9, 4))
-		nameStyle := lipgloss.NewStyle()
-		if selected {
-			nameStyle = nameStyle.Reverse(true).Foreground(lipgloss.Color("6"))
-		}
-		return "  " + methodStyle.Render(method) + " " + nameStyle.Render(name)
-	}
-
-	ep := item.Endpoint
-	cursor := "  "
-	if m.Store != nil && m.Store.GetEndpointOverride(string(ep.Method), ep.Path) != nil {
-		cursor = "~ "
-	}
-	method := padRight(strings.ToUpper(string(ep.Method)), 6)
-	methodStyle := lipgloss.NewStyle().Foreground(MethodColor(string(ep.Method))).Bold(true)
-	path := truncate(ep.Path, max(width-len(cursor)-7, 4))
-	pathStyle := lipgloss.NewStyle()
-	if selected {
-		pathStyle = pathStyle.Reverse(true).Foreground(lipgloss.Color("6"))
-	}
-	return cursor + methodStyle.Render(method) + " " + pathStyle.Render(path)
-}
-
 func (m Model) renderRightPanel(height, width int) string {
 	active := m.ActivePanel == PanelRight
 	borderStyle, borderColor := panelBorderStyle(active)
@@ -348,7 +248,15 @@ func (m Model) renderRightPanel(height, width int) string {
 
 	visibleHeight := max(height-2, 1)
 	start := min(m.RightScroll, max(len(lines)-1, 0))
-	if cursorLine >= 0 {
+	switch {
+	case cursorLine < 0:
+		// no auto-follow target, e.g. browse mode — pure manual scroll.
+	case m.Mode == ModeTryIt && m.TryIt.BodyFocused && !m.TryIt.EditingBody:
+		// BODY focused but not yet being typed into: let 'j' (see
+		// handleBodyFocusedKey) scroll freely past it instead of being
+		// snapped back to pin its first line in view.
+		start = scrollToShowBelow(cursorLine, start, visibleHeight, len(lines))
+	default:
 		start = scrollToShow(cursorLine, start, visibleHeight, len(lines))
 	}
 	end := min(start+visibleHeight, len(lines))
@@ -364,99 +272,6 @@ func (m Model) renderRightPanel(height, width int) string {
 		BorderStyle(borderStyle).
 		BorderForeground(borderColor).
 		Render(strings.Join(visible, "\n"))
-}
-
-func (m Model) renderTagLines(tagName string, width int) []string {
-	desc := " — Enter: expand/collapse"
-	if m.isCustomTag(tagName) {
-		desc += "  R: rename  D: delete"
-	}
-	lines := []string{boldStyle.Render(tagName), dimStyle.Render(desc), ""}
-	for _, ep := range m.EndpointsByTag[tagName] {
-		methodStyle := lipgloss.NewStyle().Foreground(MethodColor(string(ep.Method))).Bold(true)
-		lines = append(lines, methodStyle.Render(padRight(strings.ToUpper(string(ep.Method)), 7))+truncate(ep.Path, max(width-8, 4)))
-	}
-	return lines
-}
-
-func (m Model) renderEndpointLines(ep *openapi.ParsedEndpoint, active bool, width int) []string {
-	op := ep.Operation
-	var lines []string
-
-	lines = append(lines, MethodBadge(string(ep.Method))+" "+boldStyle.Render(ep.Path))
-	lines = append(lines, dimStyle.Render(strings.Repeat("─", width)))
-
-	// No blank line before this banner — RightPanel.tsx's Box has no
-	// marginTop, sitting directly under the heading's border-bottom (same
-	// fix as the try-it-out button row, see renderTryItLines).
-	saved := ""
-	if m.Store != nil {
-		if o := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); o != nil {
-			saved = yellowStyle.Render(" *saved params")
-		}
-	}
-	// Matches RightPanel.tsx's hand-composed banner exactly — brackets
-	// touch directly ("][", no gap between the two buttons, unlike every
-	// other button row in the app which goes through renderButtons' " "
-	// join) and "*saved params" sits inside the second bracket.
-	banner := dimStyle.Render("[ ") + cyanStyle.Render("Try it out (t)") + dimStyle.Render(" ][ ") +
-		greenBoldStyle.Render("Quick execute (e)") + saved + dimStyle.Render(" ]")
-	lines = append(lines, lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(banner))
-
-	if op.Summary != "" {
-		lines = append(lines, boldStyle.Render(op.Summary))
-	}
-	if op.Description != "" {
-		lines = append(lines, wrapLines(openapi.HTMLToPlainText(op.Description), width)...)
-	}
-	if op.Deprecated {
-		lines = append(lines, yellowStyle.Bold(true).Render("DEPRECATED"))
-	}
-
-	if len(op.Parameters) > 0 {
-		lines = append(lines, "", boldStyle.Render("PARAMETERS"))
-		lines = append(lines, paramTableHeader())
-		lines = append(lines, dimStyle.Render(strings.Repeat("─", width)))
-		for _, p := range sortedParameters(op.Parameters) {
-			lines = append(lines, renderParamRow(paramRowState{param: p}, width)...)
-		}
-	}
-
-	if op.RequestBody != nil {
-		heading := boldStyle.Render("BODY") + " " + dimStyle.Render(contentTypesOf(op.RequestBody.Content))
-		if op.RequestBody.Required {
-			heading += lipgloss.NewStyle().Foreground(color5xx).Render(" *")
-		}
-		lines = append(lines, "", heading)
-		// Matches RightPanel.tsx's non-try-it BODY block: a saved override's
-		// actual body (green, 1-space indent) takes priority over the plain
-		// schema shape (dim) — a leftover try-it-out session's body is
-		// visible from browse mode too, not just while try-it is open.
-		savedBody := ""
-		if m.Store != nil {
-			if o := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); o != nil {
-				savedBody = o.Body
-			}
-		}
-		bodyStyle := lipgloss.NewStyle().Foreground(color2xx)
-		switch {
-		case savedBody != "":
-			for l := range strings.SplitSeq(savedBody, "\n") {
-				lines = append(lines, " "+bodyStyle.Render(l))
-			}
-		default:
-			if schema := firstSchema(op.RequestBody.Content); schema != nil {
-				for l := range strings.SplitSeq(openapi.FormatSchema(schema, 0), "\n") {
-					lines = append(lines, dimStyle.Render(l))
-				}
-			}
-		}
-	}
-
-	lines = append(lines, renderResponseTabs(op, m.ResponseTab, active)...)
-	lines = append(lines, m.renderResponseBlock(width)...)
-
-	return lines
 }
 
 const (
@@ -618,7 +433,7 @@ func paramPlaceholder(p openapi.Parameter) string {
 // — the viewer's interactive hints (position indicator, tab-toggle hint,
 // selection hint) only show in browse mode with the right panel focused.
 func (m Model) renderResponseBlock(width int) []string {
-	if m.Response == nil {
+	if m.Viewer.Response == nil {
 		return nil
 	}
 	// Matches the try-it-out response-viewer keys now being wired up in
@@ -626,7 +441,7 @@ func (m Model) renderResponseBlock(width int) []string {
 	// indicator, v/y hint, \:toggle) show whenever those keys actually
 	// work, not just in browse mode.
 	active := m.Mode == ModeTryIt || (m.Mode == ModeBrowse && m.ActivePanel == PanelRight)
-	return append([]string{""}, m.Viewer.render(m.Response, m.Curl, active, width)...)
+	return append([]string{""}, m.Viewer.View(active, width)...)
 }
 
 // renderResponseTabs matches ResponsesSection.tsx: "Responses" (not
@@ -675,7 +490,7 @@ func renderResponseTabs(op *openapi.Operation, activeTab int, active bool) []str
 	schema := firstSchema(resp.Content)
 	if schema != nil {
 		for l := range strings.SplitSeq(openapi.FormatSchema(schema, 0), "\n") {
-			lines = append(lines, " "+dimStyle.Render(l))
+			lines = append(lines, " "+colorizeSchemaLine(l))
 		}
 	}
 	return lines
@@ -734,6 +549,22 @@ func scrollToShow(line, start, visibleHeight, total int) int {
 	case line < start:
 		start = line
 	case line >= start+visibleHeight:
+		start = line - visibleHeight + 1
+	}
+	return min(max(start, 0), max(total-visibleHeight, 0))
+}
+
+// scrollToShowBelow is scrollToShow's one-directional sibling: it nudges
+// start down to reveal line if line is currently below the viewport, but
+// — unlike scrollToShow — never snaps start back up once line has
+// scrolled above it. scrollToShow's bidirectional pin is right for a
+// single row that moves (PARAMETERS navigation: always keep the active
+// row in view, whichever way the cursor moves), but wrong for a
+// stationary multi-line region like the BODY box: pinning its first line
+// from above made it impossible to ever scroll past it — found via a user
+// report ("could not scroll down in tryout mode if body is active").
+func scrollToShowBelow(line, start, visibleHeight, total int) int {
+	if line >= start+visibleHeight {
 		start = line - visibleHeight + 1
 	}
 	return min(max(start, 0), max(total-visibleHeight, 0))

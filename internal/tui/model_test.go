@@ -167,6 +167,29 @@ func TestRightPanelScroll(t *testing.T) {
 	}
 }
 
+// TestRightPanelScrollClampsInsteadOfAccumulating is a regression test: a
+// user reported that after scrolling past the bottom (e.g. 5 presses past
+// where the content ends), scrolling back up needed that same number of
+// "dead" presses before the view moved at all. 'j' incremented RightScroll
+// unboundedly and only clamped it at render time, so overscrolling silently
+// built up a hidden offset — clampRightScroll now bounds it immediately at
+// Update time instead.
+func TestRightPanelScrollClampsInsteadOfAccumulating(t *testing.T) {
+	m := New(loadTestSpec(t), "")
+	m = step(m, "l") // focus right panel, tag row selected (short content)
+	for range 50 {
+		m = step(m, "j")
+	}
+	maxScroll := m.RightScroll
+	if maxScroll >= 50 {
+		t.Fatalf("expected 'j' to stop accumulating once content is exhausted, got %d after 50 presses", maxScroll)
+	}
+	m = step(m, "k")
+	if m.RightScroll != maxScroll-1 {
+		t.Errorf("expected the very next 'k' to move RightScroll immediately, got %d (was %d)", m.RightScroll, maxScroll)
+	}
+}
+
 func TestNavigatingLeftPanelResetsRightScrollAndResponseTab(t *testing.T) {
 	m := New(loadTestSpec(t), "")
 	m = step(m, "l", "j", "j", "h") // scroll right panel, then back to left

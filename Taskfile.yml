@@ -33,6 +33,11 @@ tasks:
       - cp internal/openapi/testdata/petstore.json ~/.tuiagger/PetStore/
       - go run ./cmd/tuiagger PetStore
 
+  smoke-auto:
+    desc: "Unattended smoke test: builds the binary and drives it through a real pty via Python, asserting on screen content (stdlib only, no pip installs)"
+    cmds:
+      - python3 scripts/smoke_test.py
+
   test-verbose:
     desc: Run all tests with verbose output
     cmds:

@@ -9,13 +9,18 @@ import (
 	"github.com/valVK/tuiagger/internal/storage"
 )
 
+// handleTryItKey is TryIt's Update — ep comes from the endpoint snapshot
+// enterTryIt captured on entry (m.TryIt.Endpoint), not a fresh
+// m.selectedItem() lookup on every keystroke: left-panel navigation is
+// unreachable while Mode == ModeTryIt (this handler owns every key until
+// Esc), so the selection can't change out from under an in-progress
+// session.
 func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	item := m.selectedItem()
-	if item == nil || item.Type != ItemEndpoint {
+	ep := m.TryIt.Endpoint
+	if ep == nil {
 		return m.exitTryIt(), nil
 	}
-	ep := item.Endpoint
 	params := sortedParameters(ep.Operation.Parameters)
 	headerParams, custom := splitCustomParams(m.TryIt.CustomParams)
 	totalRows := tryItTotalRows(params, custom)
@@ -77,7 +82,7 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// "execute, then copy the result" is an extremely common workflow to
 	// lock behind switching modes. Deliberately enabling it here — see
 	// HANDOFF.md.
-	if m.Response != nil {
+	if m.Viewer.Response != nil {
 		switch key {
 		case "J", "K", "G", "v", "y", `\`:
 			var cmd tea.Cmd
@@ -88,9 +93,9 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// command to the clipboard, independent of tab/selection state.
 			// Doesn't collide with try-it-out's own 'c' (cycle param type,
 			// lowercase, further down this switch).
-			if m.Curl != "" {
+			if m.Viewer.Curl != "" {
 				var cmd tea.Cmd
-				m.Viewer, cmd = m.Viewer.yankCurl(m.Curl)
+				m.Viewer, cmd = m.Viewer.yankCurl(m.Viewer.Curl)
 				return m, cmd
 			}
 		case "j", "k":
@@ -130,6 +135,7 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.TryIt.ParamCursor++
 		} else if m.tryItHasBodySection(ep) {
 			m.TryIt.BodyFocused = true
+			m.TryIt.BodyScrollFloor = m.RightScroll
 		}
 		return m, nil
 	case "k", "up":
@@ -302,21 +308,41 @@ func (m Model) tryItHasBodySection(ep *openapi.ParsedEndpoint) bool {
 // handleBodyFocusedKey matches useRightPanelKeyboard.ts's bodyTabFocused
 // branch.
 func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	ep := m.TryIt.Endpoint
 	switch msg.String() {
 	case "i":
-		if item := m.selectedItem(); m.TryIt.Body == "" && item != nil && item.Type == ItemEndpoint && item.Endpoint.Operation.RequestBody != nil {
-			if schema := applicationJSONSchema(item.Endpoint.Operation.RequestBody.Content); schema != nil {
+		if m.TryIt.Body == "" && ep != nil && ep.Operation.RequestBody != nil {
+			if schema := applicationJSONSchema(ep.Operation.RequestBody.Content); schema != nil {
 				if scaffolded := openapi.ScaffoldPlaceholder(schema); scaffolded != nil {
 					m.TryIt.Body = jsonPretty(scaffolded)
 				}
 			}
 		}
 		m.TryIt.EditingBody = true
-		m.TryIt.BodyInput.SetValue(m.TryIt.Body)
+		m.TryIt.BodyInput = setBodyValue(m.TryIt.BodyInput, m.TryIt.Body)
 		m.TryIt.BodyInput.Focus()
 		return m, nil
 	case "k", "up":
+		// Mirrors "j"/"down" below: scroll back up first if the user
+		// scrolled past the box, only unfocusing back to PARAMETERS once
+		// back at the position BODY was originally focused from — see
+		// BodyScrollFloor's doc comment.
+		if m.RightScroll > m.TryIt.BodyScrollFloor {
+			m.RightScroll--
+			return m, nil
+		}
 		m.TryIt.BodyFocused = false
+		return m, nil
+	case "j", "down":
+		// Scrolls past the BODY box (e.g. to reach RESPONSES below it, or
+		// see the rest of a body taller than one screen) — see
+		// scrollToShowBelow's doc comment for why this doesn't get
+		// snapped back on the next render. Clamped immediately (see
+		// clampRightScroll's doc comment) so scrolling past the bottom
+		// doesn't need an equal number of 'k' presses just to start
+		// moving back up.
+		m.RightScroll++
+		m.RightScroll = m.clampRightScroll()
 		return m, nil
 	case "e":
 		// Matches useAppKeyboard.ts's global 'e' handler: it lives in a
@@ -324,8 +350,8 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// branch and only checks rightPanelNormalMode (unaffected by body
 		// focus), so execute still works here — unlike 'm'/'p'/'r', which
 		// are local to the focused hook and correctly swallowed below.
-		if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint {
-			cmd := m.executeCmd(item.Endpoint)
+		if ep != nil {
+			cmd := m.executeCmd(ep)
 			m.Loading = true
 			return m, cmd
 		}

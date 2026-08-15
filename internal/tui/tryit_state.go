@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/storage"
 )
@@ -19,6 +20,13 @@ import (
 // It's reset whenever the left-panel selection changes, matching the TS
 // app's selectedItem-change effect in App.tsx.
 type tryItState struct {
+	// Endpoint is captured once by enterTryIt — the component's own copy
+	// of which endpoint this session is for, so Update (handleTryItKey)
+	// doesn't need to re-derive it from the root's left-panel selection on
+	// every keystroke. Safe: left-panel navigation is unreachable while
+	// Mode == ModeTryIt, so the selection can't change mid-session.
+	Endpoint *openapi.ParsedEndpoint
+
 	ParamValues    map[string]string
 	DisabledParams map[string]bool
 	OverridePath   string
@@ -56,6 +64,14 @@ type tryItState struct {
 	BodyFocused bool
 	EditingBody bool
 	BodyInput   textarea.Model
+	// BodyScrollFloor is RightScroll's value at the moment BODY was
+	// focused — 'k'/'up' while focused scrolls back up as long as
+	// RightScroll is still above this floor (undoing 'j' presses that
+	// scrolled past the box), and only unfocuses back to PARAMETERS once
+	// it's reached, so scrolling up mirrors scrolling down instead of
+	// jumping straight back to PARAMETERS from wherever the user scrolled
+	// to.
+	BodyScrollFloor int
 
 	ShowResetConfirm bool
 }
@@ -75,6 +91,7 @@ func (m Model) enterTryIt() Model {
 	ep := item.Endpoint
 
 	state := tryItState{
+		Endpoint:       ep,
 		ParamValues:    map[string]string{},
 		DisabledParams: map[string]bool{},
 	}
@@ -123,6 +140,47 @@ func newBodyTextarea() textarea.Model {
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
 	ta.SetHeight(10)
+	// bubbles/textarea's default FocusedStyle.CursorLine paints a
+	// full-width background behind whichever line the cursor sits on —
+	// since most of a JSON body's lines are short, that background
+	// extends across mostly blank padding, reading as a stray highlighted
+	// block rather than a cursor indicator (found via a user report: "why
+	// body have extra white line"). The terminal's own cursor already
+	// shows position; this box doesn't need a second, wider indicator.
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	// bubbles/textarea also prints a "┃ " prompt at the start of every
+	// line by default — redundant here, since the BODY box's own rounded
+	// border already delineates it, and it read as a second, unwanted
+	// vertical line running down the left edge (found via a user report
+	// clarifying the "extra line" was this, not the cursor-line
+	// background above).
+	ta.Prompt = ""
+	return ta
+}
+
+// setBodyValue sets a body textarea's content, sizes it to match, and
+// positions the cursor at the very top.
+//
+// Height: the textarea's own SetHeight is a fixed row count (the
+// constructor's SetHeight(10) padded shorter content with blank rows,
+// same bug class the removed Prompt/CursorLine styling was), but the
+// read-only preview box sizes itself to exactly its content's line count
+// with no padding — so switching into edit mode visibly grew or shrank
+// the box instead of it staying put. Sized here to match exactly (found
+// via a user report: "textarea in edit mode should be the same as
+// preview height").
+//
+// Cursor: SetValue alone leaves the cursor at the end of the inserted
+// text — the bottom of a multi-line JSON body — so entering edit mode
+// always opened scrolled to the bottom instead of the top (found via a
+// user report: "move cursor top").
+func setBodyValue(ta textarea.Model, value string) textarea.Model {
+	ta.SetValue(value)
+	ta.SetHeight(len(strings.Split(value, "\n")))
+	for range ta.LineCount() {
+		ta.CursorUp()
+	}
+	ta.CursorStart()
 	return ta
 }
 
@@ -155,8 +213,7 @@ func applicationJSONSchema(content map[string]openapi.MediaType) *openapi.Schema
 // for every other case (an untouched write-method endpoint's auto-scaffolded
 // Body is never empty, so it still gets saved as before).
 func (m Model) exitTryIt() Model {
-	if item := m.selectedItem(); item != nil && item.Type == ItemEndpoint && m.Store != nil {
-		ep := item.Endpoint
+	if ep := m.TryIt.Endpoint; ep != nil && m.Store != nil {
 		override := storage.EndpointOverride{
 			Params:         m.TryIt.ParamValues,
 			CustomParams:   m.TryIt.CustomParams,
