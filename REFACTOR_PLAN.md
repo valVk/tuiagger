@@ -1,0 +1,139 @@
+# Component-system redesign for internal/tui
+
+## Context
+
+The just-completed refactor (5 commits, merged via PR #4) split `tryit.go`/
+`manual.go` into per-concern files and extracted shared sub-widgets
+(`headertable.go`, `paramtable.go`), but the architecture review that
+followed found the same "one big file, three tangled concerns" shape still
+present in `infopopup.go`, and the root `Model`/`View()` still mixing
+generic Elm-loop plumbing with one specific mode's (browse's) logic.
+
+The user wants to go further than fixing those two spots: separate
+**representation** (rendering) from **business logic** (state transitions)
+throughout `internal/tui`, and decompose the flat `Model` into small,
+independently-owned components — one state + one update-logic + one render
+each, composed into a tree, the way a Vue SFC tree composes. Communication
+between components goes through `tea.Msg`/`tea.Cmd` (Bubbletea's own
+message-passing idiom), not raw goroutine channels — channels would fight
+Bubbletea's single-threaded `Update`/`View` loop, confirmed via exploration
+that the codebase already treats `tea.Cmd`-returning closures as its only
+async primitive (HTTP execution, clipboard yank, yank-expiry timers all go
+through this pattern already; no goroutines/channels exist directly in
+`internal/tui`).
+
+## Component contract
+
+Bubbletea's own `tea.Model` interface is:
+
+```go
+type Model interface {
+    Init() Cmd
+    Update(Msg) (Model, Cmd)
+    View() string
+}
+```
+
+Implementing this *literally* for every sub-component forces `Update` to
+return the `tea.Model` interface, which means every call site needs a type
+assertion to get a concrete type back — Bubbletea's own bundled components
+(`bubbles/textinput`, `bubbles/textarea`, already used throughout this
+codebase) don't do this either. They use the same three method names with a
+**concrete** return type: `Update(tea.Msg) (textinput.Model, tea.Cmd)`. This
+plan follows that existing, already-in-use convention — a documented pattern,
+not a compiler-checked interface:
+
+```go
+func (c T) Init() tea.Cmd
+func (c T) Update(msg tea.Msg) (T, tea.Cmd)
+func (c T) View() string
+```
+
+This applies to every **top-level, Mode-routed** component (the ones the root
+`Model` dispatches `tea.Msg` to directly). Nested sub-widgets that are only
+ever driven by their owning component — `headerTableState`, `paramTable`
+inside TryIt/Manual — keep their current richer signatures (they take
+slices of their parent's owned data each call, the way a Vue child receives
+props). That split already matches this repo's own composition philosophy
+(`.claude/skills/tuiagger-dev`: "a parent can only pass its child a message
+or read its child's exported fields") — it doesn't need to change, just be
+named consistently at the top level.
+
+## Target component tree
+
+Root `Model` keeps: chrome (`Spec`, `Width`/`Height`, `Quitting`,
+`SpecLoading`/`SpecError`, `Source`, `CollectionName`), `Mode`, DI services
+(`HTTPClient`, `Store`), and one field per top-level component:
+
+| Component | New/existing file(s) | Replaces |
+|---|---|---|
+| `ResponseViewer` | responseviewer.go | Same file, reshaped: owns `Response`/`Curl` internally (currently passed in on every `render` call from the root `Model`); `handleKey`→`Update`, `render`→`View`; consumes `yankExpiredMsg` itself instead of the root `Model.Update` special-casing it |
+| `ServersPanel`, `AuthPanel`, `EnvironmentsPanel` + thin `InfoPopup` parent | infopopup_servers.go, infopopup_auth.go, infopopup_env.go, infopopup.go | infopopup.go (656 lines, 3 tangled concerns) |
+| `HelpPopup` | help.go | Same file, method rename only (already self-contained) |
+| `SaveDialog` | savedialog.go | Same file, method rename only (already self-contained; stays nested under Manual since it's only ever entered from there) |
+| `RenameTagPopup` | renametag.go | Same file, method rename only |
+| `TryIt` | tryit_state.go / tryit_keys.go / tryit_render.go / tryit_execute.go | Same files, thin `Init`/`Update`/`View` facade added; **captures its `*openapi.ParsedEndpoint` once at `Init`** instead of the root re-deriving `m.selectedItem()` on every keystroke — makes `Update` self-sufficient from `msg` alone |
+| `Manual` | manual_state.go / manual_keys.go / manual_render.go / manual_execute.go | Same files, thin facade only (already self-contained, no left-panel dependency) |
+| `LeftPanel` | flatlist.go + new leftpanel_keys.go/leftpanel_render.go | `handleLeftPanelKey` (model.go), the left-panel slice of view.go |
+| `Browse` | new browse_render.go | The endpoint-doc-display branch currently inlined in `renderRightPanel` (view.go) |
+
+Root `Model.Update` becomes: the true cross-cutting guards (quit,
+reload-error, window resize, `responseMsg`/`reloadMsg` — since `Spec` is
+root-owned, reload has to stay root-level) plus a dispatch of `tea.Msg` to
+whichever component `Mode` selects. Root `Model.View` becomes: header +
+active component's `.View()` + status bar, replacing the current `switch`
+of bespoke `renderXPopup`/`renderXPanel` calls.
+
+## Staging (task check after every stage, same discipline as the last refactor)
+
+Branch: `refactor/tui-component-system`, based on `master` (post-merge of
+the tryit/manual split via PR #4, so this branch has `tryit_state.go`/
+`manual_state.go`/etc. to build on). Commit this plan to the repo as
+`REFACTOR_PLAN.md` in the first commit, checklist-updated per stage, deleted
+in the final stage — same pattern as last time.
+
+- [x] Stage 0 — commit this plan
+- [ ] Stage 1 — ResponseViewer → real component. Move `Response`/`Curl`
+      fields into `responseViewer` itself (populated from `responseMsg`
+      inside its own new `Update`). Rename `handleKey`→`Update`,
+      `render`→`View`. Root `Model` forwards `tea.KeyMsg`/`responseMsg`/
+      `yankExpiredMsg` into it instead of special-casing `yankExpiredMsg`
+      itself.
+- [ ] Stage 2 — Split infopopup.go into `ServersPanel`/`AuthPanel`/
+      `EnvironmentsPanel` (each own state struct + `Update`/`View`), with
+      `InfoPopup` shrinking to an `InfoSection`-keyed 3-way dispatch.
+- [ ] Stage 3 — Mechanical renames: `HelpPopup`, `SaveDialog`,
+      `RenameTagPopup` get `Init`/`Update`/`View` method names (low-risk,
+      fast — bodies unchanged).
+- [ ] Stage 4 — TryIt/Manual facades. Add `Init`/`Update`/`View` wrapping
+      the existing `handleTryItKey`/`renderTryItLines`/etc. TryIt's `Init`
+      snapshots the selected endpoint into its own state (new field on
+      `tryItState`) instead of `Update` re-deriving it via
+      `m.selectedItem()` each keystroke.
+- [ ] Stage 5 — LeftPanel extraction: `handleLeftPanelKey` + the
+      left-panel render slice of view.go + `flatlist.go`'s data become one
+      component.
+- [ ] Stage 6 — Browse extraction: the default (non-try-it) right-panel
+      endpoint-doc view becomes its own component, giving browse mode
+      parity with TryIt/Manual as a first-class component instead of
+      inlined `view.go` logic.
+- [ ] Stage 7 — Root Model becomes a thin dispatcher. `Update`/`View`
+      shrink to chrome guards + component dispatch; delete now-dead
+      bespoke `handleXKey`/`renderXLines` wrapper functions in
+      model.go/view.go that the facades superseded. Delete
+      `REFACTOR_PLAN.md` in this final commit.
+
+## Verification
+
+- `task check` (fmt-check + vet + test) after every stage — must stay green;
+  stop and diagnose on red before continuing, same bar as the last refactor.
+- Full `go test ./... -v` skim at the end to confirm no assertion was
+  silently dropped while chasing green (existing 213 tests are the behavior
+  contract; renamed methods need only mechanical call-site updates in
+  `*_test.go`, not new test logic — a logic change needed to stay green
+  signals a real behavior slip, not a safe refactor).
+- Manual `task smoke` pass by the user at the end for real-terminal
+  confirmation (this environment can't drive a TTY) — same keyboard-driven
+  checklist as before: HEADERS/PARAMETERS nav, try-it-out, manual builder
+  save/edit/delete, info popup (servers/auth/environments), help, response
+  viewer visual-select/yank.
