@@ -300,6 +300,60 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+// rightPanelLayout replicates View()/renderRightPanel's layout math
+// (leftWidth/rightWidth/inner/visibleHeight) — shared by scrollToResponse
+// and clampRightScroll below so both compute scroll positions against the
+// exact same content width/height the next render will actually use.
+func (m Model) rightPanelLayout() (inner, visibleHeight int) {
+	contentHeight := max(m.Height-8, 10)
+	leftWidthPct := 30
+	if m.LeftExpanded {
+		leftWidthPct = 50
+	}
+	leftWidth := max(m.Width*leftWidthPct/100, 20)
+	rightWidth := max(m.Width-leftWidth-2, 20)
+	return max(rightWidth-4, 1), max(contentHeight-2, 1)
+}
+
+// rightPanelLineCount returns how many lines the right panel would render
+// right now for clampRightScroll below — deliberately re-derived rather
+// than cached, the same content-dependent recompute scrollToResponse
+// already does for the same reason (cheap relative to a keypress).
+func (m Model) rightPanelLineCount(inner int) int {
+	if m.Mode == ModeTryIt {
+		if m.TryIt.Endpoint == nil {
+			return 0
+		}
+		lines, _ := m.renderTryItLines(m.TryIt.Endpoint, inner)
+		return len(lines)
+	}
+	item := m.selectedItem()
+	if item == nil {
+		return 0
+	}
+	switch item.Type {
+	case ItemTag:
+		return len(m.renderTagLines(item.TagName, inner))
+	case ItemEndpoint:
+		return len(m.renderEndpointLines(item.Endpoint, m.ActivePanel == PanelRight, inner))
+	}
+	return 0
+}
+
+// clampRightScroll bounds RightScroll to the range render will actually
+// use. Scroll keys increment/decrement it freely (matching the existing
+// "clamp at render time" pattern already in renderRightPanel), but without
+// this, repeatedly scrolling past the bottom (or, in try-it-out's
+// BODY-focused case, past the top) accumulates a hidden offset that then
+// silently eats an equal number of presses in the other direction before
+// the view visibly moves — found via a user report ("press down 5
+// times... have to press up 5 times up to begin scroll up").
+func (m Model) clampRightScroll() int {
+	inner, visibleHeight := m.rightPanelLayout()
+	total := m.rightPanelLineCount(inner)
+	return min(max(m.RightScroll, 0), max(total-visibleHeight, 0))
+}
+
 // scrollToResponse computes the right-panel scroll offset that brings the
 // just-arrived response into view, replicating renderRightPanel's own
 // layout math (leftWidth/rightWidth/inner) so Update can decide the target
@@ -317,13 +371,7 @@ func (m Model) scrollToResponse() int {
 		return 0
 	}
 
-	leftWidthPct := 30
-	if m.LeftExpanded {
-		leftWidthPct = 50
-	}
-	leftWidth := max(m.Width*leftWidthPct/100, 20)
-	rightWidth := max(m.Width-leftWidth-2, 20)
-	inner := max(rightWidth-4, 1)
+	inner, _ := m.rightPanelLayout()
 
 	var lines []string
 	if m.Mode == ModeTryIt {

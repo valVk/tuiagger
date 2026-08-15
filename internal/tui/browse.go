@@ -157,6 +157,7 @@ func (m Model) handleRightPanelKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "j", "down":
 		m.RightScroll++
+		m.RightScroll = m.clampRightScroll()
 		return m, nil
 	case "k", "up":
 		m.RightScroll = max(0, m.RightScroll-1)
