@@ -14,7 +14,7 @@ import (
 // environment here; callers needing a body-scaffold fallback (try-it-out)
 // or override persistence (also try-it-out) do that themselves before
 // calling in, since only one caller needs either.
-func buildRequestSpec(servers []openapi.Server, selectedServer int, store *storage.Store, collector *request.ParameterCollector, method, path, body string, security []openapi.SecurityRequirement, securitySchemes map[string]openapi.SecurityScheme) request.Spec {
+func buildRequestSpec(servers []openapi.Server, selectedServer int, store *storage.Store, collector *request.ParameterCollector, method, path, body, contentType string, security []openapi.SecurityRequirement, securitySchemes map[string]openapi.SecurityScheme) request.Spec {
 	baseURL := "http://localhost"
 	if len(servers) > 0 {
 		idx := selectedServer
@@ -34,6 +34,7 @@ func buildRequestSpec(servers []openapi.Server, selectedServer int, store *stora
 		QueryParams:       collector.QueryParams(),
 		HeaderParams:      collector.HeaderParams(),
 		Body:              request.Interpolate(body, envVars),
+		ContentType:       contentType,
 		OperationSecurity: security,
 		SecuritySchemes:   securitySchemes,
 		AuthCredentials:   authCreds,

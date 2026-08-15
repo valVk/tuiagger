@@ -76,6 +76,14 @@ type tryItState struct {
 	// to.
 	BodyScrollFloor int
 
+	// ContentTypeTab is an index into sortedContentTypes(ep's declared
+	// request body content) — cycled by 'c' while BODY is focused, same
+	// int-index/modulo-cycle shape as ResponseTab. Index 0 is the default
+	// (sortedContentTypes sorts "application/json" first among the three
+	// supported types, so the zero value naturally preserves prior
+	// behavior for the common case with no restore-on-entry logic needed).
+	ContentTypeTab int
+
 	ShowResetConfirm bool
 }
 
@@ -108,6 +116,17 @@ func (m Model) enterTryIt() Model {
 			state.OverrideMethod = override.OverrideMethod
 			state.Body = override.Body
 			state.CustomParams = slices.Clone(override.CustomParams)
+			// Restore which content type was selected last time, by
+			// mapping the persisted type string back to its tab index —
+			// see rawContentType's doc comment for why the stored value is
+			// "" (leaving ContentTypeTab at its 0 default) unless the user
+			// had explicitly picked something other than the default tab.
+			if override.ContentType != "" && ep.Operation.RequestBody != nil {
+				types := sortedContentTypes(ep.Operation.RequestBody.Content)
+				if idx := slices.Index(types, override.ContentType); idx >= 0 {
+					state.ContentTypeTab = idx
+				}
+			}
 		}
 	}
 	// Matches useAppKeyboard.ts's 't' handler: auto-fill the body with
@@ -115,9 +134,10 @@ func (m Model) enterTryIt() Model {
 	// scaffoldPlaceholder) the moment try-it-out opens, but only if there's
 	// nothing there already (a saved override's body always wins).
 	if state.Body == "" && ep.Operation.RequestBody != nil {
-		if schema := applicationJSONSchema(ep.Operation.RequestBody.Content); schema != nil {
+		contentType := selectedContentType(ep, state.ContentTypeTab)
+		if schema := selectedSchema(ep.Operation.RequestBody.Content, contentType); schema != nil {
 			if scaffolded := openapi.ScaffoldFakeBody(schema); scaffolded != nil {
-				state.Body = jsonPretty(scaffolded)
+				state.Body = encodeBody(contentType, scaffolded)
 			}
 		}
 	}
@@ -187,24 +207,12 @@ func setBodyValue(ta textarea.Model, value string) textarea.Model {
 	return ta
 }
 
-// applicationJSONSchema looks up the "application/json" media type
-// specifically, matching useAppKeyboard.ts's body-scaffold trigger — unlike
-// firstSchema (used for read-only docs display, where any declared content
-// type is a reasonable thing to show), scaffolding a body a user will
-// actually send shouldn't depend on Go's nondeterministic map iteration
-// order picking, say, "multipart/form-data" instead.
-func applicationJSONSchema(content map[string]openapi.MediaType) *openapi.Schema {
-	if mt, ok := content["application/json"]; ok {
-		return mt.Schema
-	}
-	return nil
-}
-
 // selectedSchema looks up the schema for whichever content type is
-// currently selected — the multi-content-type-aware replacement for
-// applicationJSONSchema's hardcoded "application/json"-only lookup above
-// (kept temporarily; callers migrate to this one in the next layer of
-// this feature).
+// currently selected — unlike firstSchema (used for read-only docs
+// display, where any declared content type is a reasonable thing to show),
+// scaffolding a body a user will actually send needs the exact type
+// they've picked, not whichever Go's nondeterministic map iteration order
+// happens to yield.
 func selectedSchema(content map[string]openapi.MediaType, contentType string) *openapi.Schema {
 	if mt, ok := content[contentType]; ok {
 		return mt.Schema
@@ -238,6 +246,39 @@ func sortedContentTypes(content map[string]openapi.MediaType) []string {
 	return types
 }
 
+// selectedContentType resolves a tryItState.ContentTypeTab index to an
+// actual content-type string for the given endpoint, always returning a
+// non-empty, encodable value: "application/json" when the endpoint has no
+// request body or declares no encodable content type at all (matching
+// Build()'s own application/json fallback), otherwise
+// sortedContentTypes(...)[tab modulo len].
+func selectedContentType(ep *openapi.ParsedEndpoint, tab int) string {
+	if ep == nil || ep.Operation.RequestBody == nil {
+		return "application/json"
+	}
+	types := sortedContentTypes(ep.Operation.RequestBody.Content)
+	if len(types) == 0 {
+		return "application/json"
+	}
+	idx := ((tab % len(types)) + len(types)) % len(types)
+	return types[idx]
+}
+
+// rawContentType is what actually gets persisted into
+// storage.EndpointOverride.ContentType: "" at the default tab (index 0),
+// matching isEmptyOverride's "nothing worth persisting" contract — an
+// untouched session shouldn't mark the endpoint "*saved params" just for
+// resolving to its own default content type, the same reasoning that keeps
+// an auto-scaffolded-but-untouched Body from tripping isEmptyOverride
+// either (see exitTryIt's doc comment). Only an explicit non-default
+// selection is worth writing to disk.
+func rawContentType(ep *openapi.ParsedEndpoint, tab int) string {
+	if tab == 0 {
+		return ""
+	}
+	return selectedContentType(ep, tab)
+}
+
 // exitTryIt persists the in-progress edit (params, disabled set, body,
 // path/method overrides) before returning to browse mode, matching
 // App.tsx's Esc handler — TS saves on Esc exit, not just on execute, so
@@ -260,6 +301,7 @@ func (m Model) exitTryIt() Model {
 			CustomParams:   m.TryIt.CustomParams,
 			DisabledParams: disabledSlice(m.TryIt.DisabledParams),
 			Body:           m.TryIt.Body,
+			ContentType:    rawContentType(ep, m.TryIt.ContentTypeTab),
 			OverridePath:   m.TryIt.OverridePath,
 			OverrideMethod: m.TryIt.OverrideMethod,
 		}
@@ -279,7 +321,7 @@ func (m Model) exitTryIt() Model {
 // empty-but-present override).
 func isEmptyOverride(o storage.EndpointOverride) bool {
 	return len(o.Params) == 0 && len(o.CustomParams) == 0 && len(o.DisabledParams) == 0 &&
-		o.Body == "" && o.OverridePath == "" && o.OverrideMethod == ""
+		o.Body == "" && o.ContentType == "" && o.OverridePath == "" && o.OverrideMethod == ""
 }
 
 // tryItTotalRows matches ParametersSection.tsx's rows array: required specs,
@@ -329,6 +371,7 @@ func (m Model) resetOverride(ep *openapi.ParsedEndpoint) Model {
 	m.TryIt.OverridePath = ""
 	m.TryIt.OverrideMethod = ""
 	m.TryIt.Body = ""
+	m.TryIt.ContentTypeTab = 0
 	m.TryIt.BodyFocused = false
 	m.TryIt.ShowResetConfirm = false
 	return m

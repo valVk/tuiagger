@@ -19,7 +19,8 @@ import (
 // quickExecuteCmd.
 func (m Model) executeCmd(ep *openapi.ParsedEndpoint) tea.Cmd {
 	tryIt := m.TryIt
-	return m.executeWithOverride(ep, tryIt.ParamValues, tryIt.DisabledParams, tryIt.CustomParams, tryIt.OverridePath, tryIt.OverrideMethod, tryIt.Body)
+	contentType := rawContentType(ep, tryIt.ContentTypeTab)
+	return m.executeWithOverride(ep, tryIt.ParamValues, tryIt.DisabledParams, tryIt.CustomParams, tryIt.OverridePath, tryIt.OverrideMethod, tryIt.Body, contentType)
 }
 
 // quickExecuteCmd runs a request from browse mode using the endpoint's
@@ -29,7 +30,7 @@ func (m Model) quickExecuteCmd(ep *openapi.ParsedEndpoint) tea.Cmd {
 	paramValues := map[string]string{}
 	disabled := map[string]bool{}
 	var customParams []storage.CustomParameter
-	overridePath, overrideMethod, body := "", "", ""
+	overridePath, overrideMethod, body, contentType := "", "", "", ""
 	if m.Store != nil {
 		if override := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); override != nil {
 			paramValues = override.Params
@@ -40,12 +41,13 @@ func (m Model) quickExecuteCmd(ep *openapi.ParsedEndpoint) tea.Cmd {
 			overridePath = override.OverridePath
 			overrideMethod = override.OverrideMethod
 			body = override.Body
+			contentType = override.ContentType
 		}
 	}
-	return m.executeWithOverride(ep, paramValues, disabled, customParams, overridePath, overrideMethod, body)
+	return m.executeWithOverride(ep, paramValues, disabled, customParams, overridePath, overrideMethod, body, contentType)
 }
 
-func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string]string, disabledSet map[string]bool, customParams []storage.CustomParameter, overridePath, overrideMethod, body string) tea.Cmd {
+func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string]string, disabledSet map[string]bool, customParams []storage.CustomParameter, overridePath, overrideMethod, body, contentType string) tea.Cmd {
 	method := ep.Method
 	paramValues := maps.Clone(values)
 	disabled := disabledSlice(disabledSet)
@@ -71,6 +73,7 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 				CustomParams:   customParams,
 				DisabledParams: disabled,
 				Body:           body,
+				ContentType:    contentType,
 				OverridePath:   overridePath,
 				OverrideMethod: overrideMethod,
 			}
@@ -107,17 +110,26 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 			effectiveMethod = overrideMethod
 		}
 
+		// effectiveContentType resolves contentType's raw, possibly-empty
+		// value (see rawContentType's doc comment) to an actual encodable
+		// type for scaffolding/sending, without changing what got
+		// persisted into the override above.
+		effectiveContentType := contentType
+		if effectiveContentType == "" {
+			effectiveContentType = selectedContentType(ep, 0)
+		}
+
 		// Fallback for callers that never went through enterTryIt (browse
 		// mode's quick-execute 'e' on an endpoint with no saved override
 		// yet) — same realistic-data scaffold, just generated here instead
 		// of once up front.
 		if body == "" && requestBody != nil && isWriteMethod(effectiveMethod) {
-			if schema := applicationJSONSchema(requestBody.Content); schema != nil {
-				body = jsonPretty(openapi.ScaffoldFakeBody(schema))
+			if schema := selectedSchema(requestBody.Content, effectiveContentType); schema != nil {
+				body = encodeBody(effectiveContentType, openapi.ScaffoldFakeBody(schema))
 			}
 		}
 
-		spec := buildRequestSpec(servers, selectedServer, store, collector, effectiveMethod, path, body, security, securitySchemes)
+		spec := buildRequestSpec(servers, selectedServer, store, collector, effectiveMethod, path, body, effectiveContentType, security, securitySchemes)
 
 		if client == nil {
 			return responseMsg{response: &request.Response{Error: "no HTTP client configured"}}

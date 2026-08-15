@@ -47,7 +47,10 @@ func (m Model) runRequestCmd(method, path string, params []storage.CustomParamet
 
 	return func() tea.Msg {
 		collector := &request.ParameterCollector{CustomParams: params}
-		spec := buildRequestSpec(specServers, selectedServer, store, collector, method, path, body, security, securitySchemes)
+		// Layer 5 (manualState.ContentTypeTab) wires a real selection
+		// through here; until then the manual builder always sends JSON,
+		// matching current behavior exactly.
+		spec := buildRequestSpec(specServers, selectedServer, store, collector, method, path, body, "application/json", security, securitySchemes)
 
 		if client == nil {
 			return responseMsg{response: &request.Response{Error: "no HTTP client configured"}}

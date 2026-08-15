@@ -201,6 +201,71 @@ func TestExecuteSendsTheEditedBodyVerbatim(t *testing.T) {
 	}
 }
 
+func TestBodyFocusCCyclesContentTypeAndRescaffolds(t *testing.T) {
+	m := endpointWithMultiContentTypeBodyModel(t)
+	m = m.WithServices(nil, newTestStore(t))
+	m = step(m, "t")
+	// enterTryIt already auto-scaffolds a body for tab 0; clear it so 'c'
+	// (which only rescaffolds while Body == "") shows an observable change,
+	// same setup shape as handleBodyFocusedKey's 'i' case.
+	m.TryIt.Body = ""
+	ep := m.TryIt.Endpoint
+	types := sortedContentTypes(ep.Operation.RequestBody.Content)
+
+	m = focusBody(m)
+	if m.TryIt.ContentTypeTab != 0 {
+		t.Fatalf("expected to start on tab 0, got %d", m.TryIt.ContentTypeTab)
+	}
+	m = step(m, "c")
+	if m.TryIt.ContentTypeTab != 1 {
+		t.Errorf("expected 'c' to advance to tab 1, got %d", m.TryIt.ContentTypeTab)
+	}
+
+	// 'i' scaffolds against whichever tab is now selected — asserts the
+	// migrated call site in handleBodyFocusedKey actually uses the cycled
+	// tab, not a stale application/json-only lookup.
+	m = step(m, "i")
+	wantContentType := types[1]
+	if wantContentType == "application/x-www-form-urlencoded" && !strings.Contains(m.TryIt.Body, "=") {
+		t.Errorf("expected form-urlencoded scaffold, got %q", m.TryIt.Body)
+	}
+	if wantContentType == "application/xml" && !strings.Contains(m.TryIt.Body, "<?xml") {
+		t.Errorf("expected XML scaffold, got %q", m.TryIt.Body)
+	}
+}
+
+func TestExecuteSendsContentTypeHeaderMatchingSelectedTab(t *testing.T) {
+	var gotContentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := endpointWithMultiContentTypeBodyModel(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), newTestStore(t))
+	m = step(m, "t")
+	types := sortedContentTypes(m.TryIt.Endpoint.Operation.RequestBody.Content)
+	m = focusBody(m)
+	m = step(m, "c") // move to tab 1, a non-default (and thus persisted) selection
+
+	next, cmd := m.Update(key("e"))
+	if cmd == nil {
+		t.Fatalf("expected an execute command")
+	}
+	m = next.(Model)
+	msg := cmd()
+	m2, _ := m.Update(msg)
+	m = m2.(Model)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Viewer.Response)
+	}
+	if gotContentType != types[1] {
+		t.Errorf("expected Content-Type %q for the selected tab, got %q", types[1], gotContentType)
+	}
+}
+
 func TestQuitGuardedWhileEditingBody(t *testing.T) {
 	m := endpointWithBodyModel(t)
 	m = m.WithServices(nil, newTestStore(t))

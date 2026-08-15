@@ -312,15 +312,28 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "i":
 		if m.TryIt.Body == "" && ep != nil && ep.Operation.RequestBody != nil {
-			if schema := applicationJSONSchema(ep.Operation.RequestBody.Content); schema != nil {
+			contentType := selectedContentType(ep, m.TryIt.ContentTypeTab)
+			if schema := selectedSchema(ep.Operation.RequestBody.Content, contentType); schema != nil {
 				if scaffolded := openapi.ScaffoldPlaceholder(schema); scaffolded != nil {
-					m.TryIt.Body = jsonPretty(scaffolded)
+					m.TryIt.Body = encodeBody(contentType, scaffolded)
 				}
 			}
 		}
 		m.TryIt.EditingBody = true
 		m.TryIt.BodyInput = setBodyValue(m.TryIt.BodyInput, m.TryIt.Body)
 		m.TryIt.BodyInput.Focus()
+		return m, nil
+	case "c":
+		// Cycles which declared content type BODY is scaffolded/sent as —
+		// mirrors browse.go's "/" ResponseTab cycling. A no-op when the
+		// endpoint declares 0 or 1 encodable content types, same gating
+		// sortedContentTypes's tab-line hint uses.
+		if ep != nil && ep.Operation.RequestBody != nil {
+			types := sortedContentTypes(ep.Operation.RequestBody.Content)
+			if len(types) > 1 {
+				m.TryIt.ContentTypeTab = (m.TryIt.ContentTypeTab + 1) % len(types)
+			}
+		}
 		return m, nil
 	case "k", "up":
 		// Mirrors "j"/"down" below: scroll back up first if the user

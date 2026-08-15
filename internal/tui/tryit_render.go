@@ -13,17 +13,25 @@ import (
 // live bubbles/textarea view while editing, or the plain saved/scaffolded
 // content otherwise.
 func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string {
-	var contentTypes string
+	var types []string
 	var required bool
 	if op.RequestBody != nil {
-		contentTypes = contentTypesOf(op.RequestBody.Content)
+		types = sortedContentTypes(op.RequestBody.Content)
 		required = op.RequestBody.Required
 	}
-	heading := boldStyle.Render("BODY") + " " + dimStyle.Render(contentTypes)
+	contentType := selectedContentType(m.TryIt.Endpoint, m.TryIt.ContentTypeTab)
+
+	heading := boldStyle.Render("BODY")
 	if required {
 		heading += lipgloss.NewStyle().Foreground(color5xx).Render(" *")
 	}
+	if len(types) > 1 && m.TryIt.BodyFocused {
+		heading += dimStyle.Render(" c:cycle")
+	}
 	lines := []string{heading}
+	if len(types) > 0 {
+		lines = append(lines, renderContentTypeTabLine(types, contentType))
+	}
 
 	borderColor := inactiveBorderColor
 	switch {
@@ -38,17 +46,21 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 	case !m.TryIt.EditingBody && m.TryIt.Body == "":
 		var schema *openapi.Schema
 		if op.RequestBody != nil {
-			schema = applicationJSONSchema(op.RequestBody.Content)
+			schema = selectedSchema(op.RequestBody.Content, contentType)
 		}
 		var placeholderLines []string
 		if schema != nil {
 			if scaffold := openapi.ScaffoldPlaceholder(schema); scaffold != nil {
-				placeholderLines = strings.Split(jsonPretty(scaffold), "\n")
+				placeholderLines = strings.Split(encodeBody(contentType, scaffold), "\n")
 			}
 		}
 		if len(placeholderLines) > 0 {
 			for _, l := range placeholderLines {
-				content = append(content, colorizeJSONLine(l))
+				if contentType == "application/json" {
+					content = append(content, colorizeJSONLine(l))
+				} else {
+					content = append(content, l)
+				}
 			}
 			hint := "j: focus"
 			if m.TryIt.BodyFocused {
@@ -109,6 +121,23 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 	// than the screen height, not a scroll-offset calculation bug.
 	lines = append(lines, strings.Split(box, "\n")...)
 	return lines
+}
+
+// renderContentTypeTabLine renders BODY's content-type selector — same
+// visual shape as renderResponseTabs' status-code tab line (reverse+bold
+// on the active entry), minus the status-color lookup that doesn't apply
+// here.
+func renderContentTypeTabLine(types []string, active string) string {
+	var b strings.Builder
+	for _, ct := range types {
+		style := lipgloss.NewStyle()
+		if ct == active {
+			style = style.Reverse(true).Bold(true)
+		}
+		b.WriteString(style.Render(" " + ct + " "))
+		b.WriteString(" ")
+	}
+	return b.String()
 }
 
 // renderTryItLines renders the try-it-out variant of the endpoint detail
