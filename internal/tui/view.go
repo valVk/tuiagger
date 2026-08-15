@@ -248,7 +248,15 @@ func (m Model) renderRightPanel(height, width int) string {
 
 	visibleHeight := max(height-2, 1)
 	start := min(m.RightScroll, max(len(lines)-1, 0))
-	if cursorLine >= 0 {
+	switch {
+	case cursorLine < 0:
+		// no auto-follow target, e.g. browse mode — pure manual scroll.
+	case m.Mode == ModeTryIt && m.TryIt.BodyFocused && !m.TryIt.EditingBody:
+		// BODY focused but not yet being typed into: let 'j' (see
+		// handleBodyFocusedKey) scroll freely past it instead of being
+		// snapped back to pin its first line in view.
+		start = scrollToShowBelow(cursorLine, start, visibleHeight, len(lines))
+	default:
 		start = scrollToShow(cursorLine, start, visibleHeight, len(lines))
 	}
 	end := min(start+visibleHeight, len(lines))
@@ -541,6 +549,22 @@ func scrollToShow(line, start, visibleHeight, total int) int {
 	case line < start:
 		start = line
 	case line >= start+visibleHeight:
+		start = line - visibleHeight + 1
+	}
+	return min(max(start, 0), max(total-visibleHeight, 0))
+}
+
+// scrollToShowBelow is scrollToShow's one-directional sibling: it nudges
+// start down to reveal line if line is currently below the viewport, but
+// — unlike scrollToShow — never snaps start back up once line has
+// scrolled above it. scrollToShow's bidirectional pin is right for a
+// single row that moves (PARAMETERS navigation: always keep the active
+// row in view, whichever way the cursor moves), but wrong for a
+// stationary multi-line region like the BODY box: pinning its first line
+// from above made it impossible to ever scroll past it — found via a user
+// report ("could not scroll down in tryout mode if body is active").
+func scrollToShowBelow(line, start, visibleHeight, total int) int {
+	if line >= start+visibleHeight {
 		start = line - visibleHeight + 1
 	}
 	return min(max(start, 0), max(total-visibleHeight, 0))

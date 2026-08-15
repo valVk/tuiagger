@@ -467,6 +467,62 @@ func TestTryItAutoScrollsToKeepSelectedParamVisible(t *testing.T) {
 	}
 }
 
+// TestScrollPastBodyWhenFocused is a regression test: a user reported
+// being unable to scroll down in try-it-out mode once the BODY section was
+// focused. renderTryItLines pins its auto-scroll cursorLine to the BODY
+// box's first line every render, and the old shared scrollToShow helper
+// snapped the scroll position back up to that line any time it drifted
+// below it — so once the box scrolled into view, 'j' had no visible
+// effect. Fixed by handleBodyFocusedKey gaining a "j"/"down" case and
+// renderRightPanel switching to the one-directional scrollToShowBelow
+// while BODY is focused (but not being actively edited).
+func TestScrollPastBodyWhenFocused(t *testing.T) {
+	m := New(loadTestSpec(t), "")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 20}) // short terminal forces scrolling
+	m = next.(Model)
+	m = step(m, "x") // expand all tags so every endpoint row is in FlatList
+	found := false
+	for i, item := range m.FlatList {
+		if item.Type == ItemEndpoint && item.Endpoint.Operation.RequestBody != nil {
+			m.LeftIndex = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Skip("no endpoint with a request body in fixture")
+	}
+	m = step(m, "t")
+
+	// Jump straight to BODY focus (past the last param row).
+	params := sortedParameters(m.selectedItem().Endpoint.Operation.Parameters)
+	for range len(params) + 1 {
+		m = step(m, "j")
+	}
+	if !m.TryIt.BodyFocused {
+		t.Fatalf("setup: expected BODY to be focused, got ParamCursor=%d BodyFocused=%v", m.TryIt.ParamCursor, m.TryIt.BodyFocused)
+	}
+
+	before := m.RightScroll
+	for range 20 {
+		m = step(m, "j")
+	}
+	if m.RightScroll <= before {
+		t.Fatalf("expected RightScroll to increase while scrolling past a focused BODY, stayed at %d", m.RightScroll)
+	}
+
+	// The Responses heading lives after the BODY section in the rendered
+	// output — it must actually become reachable, not just increment a
+	// number nothing reads.
+	out := m.View()
+	if !strings.Contains(out, "Execute (e)") {
+		t.Skip("terminal too small to assert on visible content in this environment")
+	}
+	if !strings.Contains(out, "Responses") {
+		t.Errorf("expected scrolling past BODY to reveal the Responses section, got:\n%s", out)
+	}
+}
+
 // TestResponseViewerWorksInTryItOutMode is a regression test: a user
 // executing a request from inside try-it-out (the most natural place to
 // do it — fill params, press 'e') previously had no way to visually-select

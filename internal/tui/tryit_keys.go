@@ -324,6 +324,13 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.TryIt.BodyFocused = false
 		return m, nil
+	case "j", "down":
+		// Scrolls past the BODY box (e.g. to reach RESPONSES below it, or
+		// see the rest of a body taller than one screen) — see
+		// scrollToShowBelow's doc comment for why this doesn't get
+		// snapped back on the next render.
+		m.RightScroll++
+		return m, nil
 	case "e":
 		// Matches useAppKeyboard.ts's global 'e' handler: it lives in a
 		// separate hook from useRightPanelKeyboard.ts's bodyTabFocused
