@@ -21,119 +21,34 @@ func (m Model) renderTryItBodySection(op *openapi.Operation, width int) []string
 	}
 	contentType := selectedContentType(m.TryIt.Endpoint, m.TryIt.ContentTypeTab)
 
-	heading := boldStyle.Render("BODY")
-	if required {
-		heading += lipgloss.NewStyle().Foreground(color5xx).Render(" *")
-	}
-	if len(types) > 1 && m.TryIt.BodyFocused {
-		heading += dimStyle.Render(" c:cycle")
-	}
-	lines := []string{heading}
-	if len(types) > 0 {
-		lines = append(lines, renderContentTypeTabLine(types, contentType))
-	}
+	lines := renderBodyHeading(types, contentType, m.TryIt.BodyFocused, required)
 
-	borderColor := inactiveBorderColor
-	switch {
-	case m.TryIt.EditingBody:
-		borderColor = color2xx
-	case m.TryIt.BodyFocused:
-		borderColor = activeBorderColor
-	}
-
-	var content []string
-	switch {
-	case !m.TryIt.EditingBody && m.TryIt.Body == "":
-		var placeholderLines []string
-		if op.RequestBody != nil {
-			if scaffold := scaffoldFor(op.RequestBody.Content, contentType, false); scaffold != "" {
-				placeholderLines = strings.Split(scaffold, "\n")
-			}
-		}
-		if len(placeholderLines) > 0 {
-			for _, l := range placeholderLines {
+	var emptyLines []string
+	unfocusedHint := "j to focus, i to edit"
+	if op.RequestBody != nil {
+		if scaffold := scaffoldFor(op.RequestBody.Content, contentType, false); scaffold != "" {
+			for _, l := range strings.Split(scaffold, "\n") {
 				if contentType == "application/json" {
-					content = append(content, colorizeJSONLine(l))
+					emptyLines = append(emptyLines, colorizeJSONLine(l))
 				} else {
-					content = append(content, l)
+					emptyLines = append(emptyLines, l)
 				}
 			}
-			hint := "j: focus"
-			if m.TryIt.BodyFocused {
-				hint = "i: edit"
-			}
-			content = append(content, dimStyle.Render(hint))
-		} else {
-			hint := "j to focus, i to edit"
-			if m.TryIt.BodyFocused {
-				hint = "i: edit"
-			}
-			content = append(content, dimStyle.Render(hint))
+			unfocusedHint = "j: focus"
 		}
-	case m.TryIt.EditingBody:
-		// Matches RightPanel.tsx's `{editingBody && <Text dimColor>Enter:
-		// done | Shift+Enter: newline | Esc: cancel</Text>}` hint below the
-		// textarea — but with corrected key semantics for this widget, not
-		// a verbatim copy of the TS wording. bubbles/textarea's default
-		// keymap binds plain Enter to insert a newline (there's no distinct
-		// Shift+Enter binding — most terminals can't even reliably tell the
-		// two apart), the opposite of what TS's TextArea does. Esc is what
-		// actually ends editing here (see handleBodyEditKey), so the hint
-		// says that instead of "cancel" (TS's own wording is a bit
-		// inaccurate too: body is already committed to state on every
-		// keystroke via onChange, so Esc doesn't truly cancel anything
-		// there either — just stops editing, same as this rewrite).
-		content = []string{m.TryIt.BodyInput.View(), dimStyle.Render("Enter: newline  Esc: done")}
-	case m.TryIt.BodyFocused:
-		// Deliberate divergence from TS, not a port of it: RightPanel.tsx's
-		// hint text only ever renders inside the `!editingBody && !body`
-		// branch above — once the body has content (the common case,
-		// since try-it-out auto-scaffolds one on entry, see enterTryIt),
-		// the 'i'/'k' shortcuts go silent with no way to discover them
-		// while BODY is actually focused. Show the same focus hint here
-		// too — found via a user report ("Body does not show the
-		// shortcut i if active"). Just "i: edit", not "| k: back to
-		// params" — a user found that half redundant/extra once shown
-		// alongside actual content.
-		content = append(strings.Split(m.TryIt.Body, "\n"), dimStyle.Render("i: edit"))
-	default:
-		content = strings.Split(m.TryIt.Body, "\n")
 	}
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
-		Padding(0, 1).
-		Width(max(width-4, 4)).
-		Render(strings.Join(content, "\n"))
-	// box is itself a multi-line string (the rendered border + its
-	// content) — every other entry in this flat []string is exactly one
-	// terminal row, and downstream code (renderRightPanel's scroll/pad
-	// math, cursorLine tracking) assumes that invariant. Appending box as
-	// a single element under-counted its real height, letting the total
-	// rendered output exceed the panel's row budget and overflow the
-	// terminal — which is what actually caused the "jumps to bottom, can't
-	// scroll back" bug: real terminal-native scroll from writing more rows
-	// than the screen height, not a scroll-offset calculation bug.
-	lines = append(lines, strings.Split(box, "\n")...)
+	lines = append(lines, renderBodyBox(bodyBoxState{
+		Width:              width,
+		Focused:            m.TryIt.BodyFocused,
+		Editing:            m.TryIt.EditingBody,
+		Body:               m.TryIt.Body,
+		BodyInput:          m.TryIt.BodyInput,
+		EmptyLines:         emptyLines,
+		EmptyHintUnfocused: unfocusedHint,
+		EmptyHintFocused:   "i: edit",
+	})...)
 	return lines
-}
-
-// renderContentTypeTabLine renders BODY's content-type selector — same
-// visual shape as renderResponseTabs' status-code tab line (reverse+bold
-// on the active entry), minus the status-color lookup that doesn't apply
-// here.
-func renderContentTypeTabLine(types []string, active string) string {
-	var b strings.Builder
-	for _, ct := range types {
-		style := lipgloss.NewStyle()
-		if ct == active {
-			style = style.Reverse(true).Bold(true)
-		}
-		b.WriteString(style.Render(" " + ct + " "))
-		b.WriteString(" ")
-	}
-	return b.String()
 }
 
 // renderTryItLines renders the try-it-out variant of the endpoint detail
