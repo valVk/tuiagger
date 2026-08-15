@@ -116,9 +116,10 @@ func (m Model) enterTryIt() Model {
 			// Restore which content type was selected last time, by
 			// mapping the persisted type string back to its tab index —
 			// see rawContentType's doc comment for why the stored value is
-			// "" (leaving ContentTypeTab at its 0 default) unless the user
-			// had explicitly picked something other than the default tab.
-			if override.ContentType != "" && ep.Operation.RequestBody != nil {
+			// storage.DefaultContentType (leaving ContentTypeTab at its 0
+			// default) unless the user had explicitly picked something
+			// other than the default tab.
+			if override.ContentType != storage.DefaultContentType && ep.Operation.RequestBody != nil {
 				types := sortedContentTypes(ep.Operation.RequestBody.Content)
 				if idx := slices.Index(types, override.ContentType); idx >= 0 {
 					state.ContentTypeTab = idx
@@ -283,7 +284,7 @@ func (m Model) exitTryIt() Model {
 // empty-but-present override).
 func isEmptyOverride(o storage.EndpointOverride) bool {
 	return len(o.Params) == 0 && len(o.CustomParams) == 0 && len(o.DisabledParams) == 0 &&
-		o.Body == "" && o.ContentType == "" && o.OverridePath == "" && o.OverrideMethod == ""
+		o.Body == "" && o.ContentType == storage.DefaultContentType && o.OverridePath == "" && o.OverrideMethod == ""
 }
 
 // tryItTotalRows matches ParametersSection.tsx's rows array: required specs,

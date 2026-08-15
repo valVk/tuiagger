@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/valVK/tuiagger/internal/openapi"
+	"github.com/valVK/tuiagger/internal/storage"
 )
 
 // contentTypeCycle resolves a ContentTypeTab index against a fixed list of
@@ -96,7 +97,7 @@ func selectedContentType(ep *openapi.ParsedEndpoint, tab int) string {
 // selection is worth writing to disk.
 func rawContentType(ep *openapi.ParsedEndpoint, tab int) string {
 	if tab == 0 {
-		return ""
+		return storage.DefaultContentType
 	}
 	return selectedContentType(ep, tab)
 }
