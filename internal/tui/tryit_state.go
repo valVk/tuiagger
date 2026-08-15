@@ -148,6 +148,27 @@ func newBodyTextarea() textarea.Model {
 	// body have extra white line"). The terminal's own cursor already
 	// shows position; this box doesn't need a second, wider indicator.
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	// bubbles/textarea also prints a "┃ " prompt at the start of every
+	// line by default — redundant here, since the BODY box's own rounded
+	// border already delineates it, and it read as a second, unwanted
+	// vertical line running down the left edge (found via a user report
+	// clarifying the "extra line" was this, not the cursor-line
+	// background above).
+	ta.Prompt = ""
+	return ta
+}
+
+// setBodyValue sets a body textarea's content and positions the cursor at
+// the very top. SetValue alone leaves the cursor at the end of the
+// inserted text — the bottom of a multi-line JSON body — so entering edit
+// mode always opened scrolled to the bottom instead of the top (found via
+// a user report: "move cursor top").
+func setBodyValue(ta textarea.Model, value string) textarea.Model {
+	ta.SetValue(value)
+	for range ta.LineCount() {
+		ta.CursorUp()
+	}
+	ta.CursorStart()
 	return ta
 }
 

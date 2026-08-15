@@ -319,7 +319,7 @@ func (m Model) handleBodyFocusedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.TryIt.EditingBody = true
-		m.TryIt.BodyInput.SetValue(m.TryIt.Body)
+		m.TryIt.BodyInput = setBodyValue(m.TryIt.BodyInput, m.TryIt.Body)
 		m.TryIt.BodyInput.Focus()
 		return m, nil
 	case "k", "up":
