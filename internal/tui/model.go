@@ -9,8 +9,6 @@ import (
 	"maps"
 	"sort"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/request"
@@ -32,59 +30,6 @@ const (
 	ModeManual
 	ModeRenameTag
 )
-
-// tryItState holds everything scoped to one endpoint's try-it-out session.
-// It's reset whenever the left-panel selection changes, matching the TS
-// app's selectedItem-change effect in App.tsx.
-type tryItState struct {
-	ParamValues    map[string]string
-	DisabledParams map[string]bool
-	OverridePath   string
-	OverrideMethod string
-
-	ParamCursor  int
-	ParamEditing bool
-	ValueInput   textinput.Model
-
-	// CustomParams backs the PARAMETERS table's always-present "[ + ]" row
-	// — matching ParametersSection.tsx, which appends an `addNew` row
-	// unconditionally in try-it-out mode regardless of whether the
-	// endpoint declares any spec parameters, so the section (and its
-	// hints) never disappears and custom query/path params can always be
-	// added. NameInput/ParamField back the name half of custom/add-new row
-	// editing (ValueInput above is shared with spec-param editing, one at
-	// a time since only one row can be selected).
-	CustomParams []storage.CustomParameter
-	ParamField   string // "name" | "value", used while editing a custom/add-new row
-	NameInput    textinput.Model
-	NewParamIn   string // in-progress type ("query"/"path") for the add-new row
-
-	// HeadersFocused/HeaderCursor/HeaderEditing back a second, independent
-	// table above PARAMETERS for CustomParams entries with In=="header" —
-	// matches HeadersSection.tsx, a wholly separate NAME/VALUE-only editor
-	// (no TYPE/DESCRIPTION columns, no enum cycling). Editing state
-	// (NameInput/ValueInput/ParamField) is shared with the PARAMETERS
-	// table since only one of the two can ever be mid-edit at once.
-	HeadersFocused bool
-	HeaderCursor   int
-	HeaderEditing  bool
-
-	EditingPath bool
-	PathInput   textinput.Model
-
-	// Body mirrors useRightPanelKeyboard.ts's bodyTabFocused/editingBody:
-	// 'j' off the last parameter row (or 'k' back) moves focus onto the
-	// BODY section; 'i' there edits it (auto-scaffolding a placeholder if
-	// still empty, matching the TS quirk where that path uses
-	// scaffoldPlaceholder rather than the faker-driven scaffoldBody
-	// enterTryIt already ran once on entry).
-	Body        string
-	BodyFocused bool
-	EditingBody bool
-	BodyInput   textarea.Model
-
-	ShowResetConfirm bool
-}
 
 type Model struct {
 	Spec           *openapi.ParsedSpec

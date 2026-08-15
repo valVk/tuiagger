@@ -559,7 +559,7 @@ func TestKAtFirstParamRowEntersHeadersFocus(t *testing.T) {
 		t.Fatalf("expected to start on the first PARAMETERS row, got cursor %d", m.TryIt.ParamCursor)
 	}
 	m = step(m, "k")
-	if !m.TryIt.HeadersFocused {
+	if !m.TryIt.HeaderTable.Focused {
 		t.Errorf("expected 'k' at the first param row to focus HEADERS")
 	}
 }
@@ -571,11 +571,11 @@ func TestKAtFirstParamRowEntersHeadersFocus(t *testing.T) {
 func TestAddHeaderViaHeadersSection(t *testing.T) {
 	m := firstEndpointModel(t)
 	m = step(m, "t", "k") // enter try-it, focus HEADERS
-	if !m.TryIt.HeadersFocused {
+	if !m.TryIt.HeaderTable.Focused {
 		t.Fatalf("expected HEADERS focused")
 	}
 	m = step(m, "i")
-	if !m.TryIt.HeaderEditing {
+	if !m.TryIt.HeaderTable.Editing {
 		t.Fatalf("expected 'i' to start editing the add-new header row")
 	}
 	m = typeText(m, "X-Test")
@@ -583,7 +583,7 @@ func TestAddHeaderViaHeadersSection(t *testing.T) {
 	m = typeText(m, "hello")
 	m = step(m, "enter")
 
-	if m.TryIt.HeaderEditing {
+	if m.TryIt.HeaderTable.Editing {
 		t.Errorf("expected editing to end after Enter")
 	}
 	headerParams, _ := splitCustomParams(m.TryIt.CustomParams)
