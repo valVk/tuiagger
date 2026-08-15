@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/google/uuid"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/request"
 	"github.com/valVK/tuiagger/internal/storage"
@@ -289,64 +288,31 @@ func (m Model) enterManualParamEdit(params []storage.CustomParameter) Model {
 	if m.Manual.ParamCursor < len(params) {
 		p := params[m.Manual.ParamCursor]
 		m.Manual.ParamAddNew = false
-		m.Manual.HeaderTable.NameInput.SetValue(p.Name)
-		m.Manual.HeaderTable.ValueInput.SetValue(p.Value)
+		m.Manual.HeaderTable = m.Manual.HeaderTable.enterParamRowEdit(p.Name, p.Value)
 	} else {
 		m.Manual.ParamAddNew = true
-		m.Manual.HeaderTable.NameInput.SetValue("")
-		m.Manual.HeaderTable.ValueInput.SetValue("")
+		m.Manual.HeaderTable = m.Manual.HeaderTable.enterParamRowEdit("", "")
 		m.Manual.NewParamIn = "query"
 	}
-	m.Manual.HeaderTable.ParamField = "name"
 	m.Manual.ParamEditing = true
-	m.Manual.HeaderTable.NameInput.Focus()
-	m.Manual.HeaderTable.ValueInput.Blur()
 	return m
 }
 
+// handleManualParamEditKey routes through the shared
+// headerTableState.handleParamRowEditKey — see paramtable.go.
 func (m Model) handleManualParamEditKey(msg tea.KeyMsg, headerParams, params []storage.CustomParameter) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.Manual.ParamEditing = false
-		return m, nil
-	case "tab":
-		if m.Manual.HeaderTable.ParamField == "name" {
-			m.Manual.HeaderTable.ParamField = "value"
-			m.Manual.HeaderTable.NameInput.Blur()
-			m.Manual.HeaderTable.ValueInput.Focus()
-		} else {
-			m.Manual.HeaderTable.ParamField = "name"
-			m.Manual.HeaderTable.ValueInput.Blur()
-			m.Manual.HeaderTable.NameInput.Focus()
-		}
-		return m, nil
-	case "enter":
-		if m.Manual.ParamAddNew {
-			name := strings.TrimSpace(m.Manual.HeaderTable.NameInput.Value())
-			if name != "" {
-				params = append(params, storage.CustomParameter{
-					ID: uuid.NewString(), Name: name, Value: m.Manual.HeaderTable.ValueInput.Value(),
-					In: m.Manual.NewParamIn, Enabled: true,
-				})
-				m.Manual.Params = mergeCustomParams(headerParams, params)
-				m.Manual.ParamCursor = len(params) - 1
-				m.Manual.ParamEditing = false
-			}
-		} else {
-			idx := m.Manual.ParamCursor
-			params[idx].Name = m.Manual.HeaderTable.NameInput.Value()
-			params[idx].Value = m.Manual.HeaderTable.ValueInput.Value()
-			m.Manual.Params = mergeCustomParams(headerParams, params)
-			m.Manual.ParamEditing = false
-		}
-		return m, nil
-	}
-
+	var updated []storage.CustomParameter
+	var done bool
 	var cmd tea.Cmd
-	if m.Manual.HeaderTable.ParamField == "name" {
-		m.Manual.HeaderTable.NameInput, cmd = m.Manual.HeaderTable.NameInput.Update(msg)
-	} else {
-		m.Manual.HeaderTable.ValueInput, cmd = m.Manual.HeaderTable.ValueInput.Update(msg)
+	m.Manual.HeaderTable, updated, done, cmd = m.Manual.HeaderTable.handleParamRowEditKey(msg, m.Manual.ParamAddNew, m.Manual.ParamCursor, params, m.Manual.NewParamIn)
+	if updated != nil {
+		m.Manual.Params = mergeCustomParams(headerParams, updated)
+		if m.Manual.ParamAddNew {
+			m.Manual.ParamCursor = len(updated) - 1
+		}
+	}
+	if done {
+		m.Manual.ParamEditing = false
 	}
 	return m, cmd
 }

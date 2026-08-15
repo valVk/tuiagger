@@ -112,7 +112,7 @@ through the shared methods instead.
 
 Run `task check`.
 
-### [ ] Step 3 — Extract shared custom/add-new PARAMETERS row editor
+### [x] Step 3 — Extract shared custom/add-new PARAMETERS row editor
 
 Similar composition for the non-spec-param editing path. New type in
 `internal/tui/paramtable.go` (or add to `headertable.go` if the shapes end

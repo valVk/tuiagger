@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/google/uuid"
 	"github.com/valVK/tuiagger/internal/openapi"
 	"github.com/valVK/tuiagger/internal/request"
 	"github.com/valVK/tuiagger/internal/storage"
@@ -396,18 +395,10 @@ func (m Model) enterParamEdit(params []openapi.Parameter, custom []storage.Custo
 	case cursor < len(params)+len(custom):
 		p := custom[cursor-len(params)]
 		m.TryIt.ParamEditing = true
-		m.TryIt.HeaderTable.ParamField = "name"
-		m.TryIt.HeaderTable.NameInput.SetValue(p.Name)
-		m.TryIt.HeaderTable.NameInput.Focus()
-		m.TryIt.HeaderTable.ValueInput.SetValue(p.Value)
-		m.TryIt.HeaderTable.ValueInput.Blur()
+		m.TryIt.HeaderTable = m.TryIt.HeaderTable.enterParamRowEdit(p.Name, p.Value)
 	default: // add-new row
 		m.TryIt.ParamEditing = true
-		m.TryIt.HeaderTable.ParamField = "name"
-		m.TryIt.HeaderTable.NameInput.SetValue("")
-		m.TryIt.HeaderTable.NameInput.Focus()
-		m.TryIt.HeaderTable.ValueInput.SetValue("")
-		m.TryIt.HeaderTable.ValueInput.Blur()
+		m.TryIt.HeaderTable = m.TryIt.HeaderTable.enterParamRowEdit("", "")
 	}
 	return m
 }
@@ -445,59 +436,25 @@ func (m Model) handleSpecParamEditKey(msg tea.KeyMsg, p openapi.Parameter) (tea.
 	return m, cmd
 }
 
-// handleCustomParamEditKey matches useParamNavigation.ts's insertMode
-// branch for 'custom'/'addNew' rows: Tab toggles which field is focused,
-// Enter commits (adding a new CustomParameter for the add-new row, or
-// updating the existing one), Esc cancels without saving.
+// handleCustomParamEditKey handles the non-spec (custom/add-new) rows of
+// the PARAMETERS table via the shared headerTableState.handleParamRowEditKey
+// — see paramtable.go.
 func (m Model) handleCustomParamEditKey(msg tea.KeyMsg, params []openapi.Parameter, headerParams, custom []storage.CustomParameter, cursor int) (tea.Model, tea.Cmd) {
 	isAddNew := cursor >= len(params)+len(custom)
+	idx := cursor - len(params)
 
-	switch msg.String() {
-	case "esc":
-		m.TryIt.ParamEditing = false
-		return m, nil
-	case "tab":
-		if m.TryIt.HeaderTable.ParamField == "name" {
-			m.TryIt.HeaderTable.ParamField = "value"
-			m.TryIt.HeaderTable.NameInput.Blur()
-			m.TryIt.HeaderTable.ValueInput.Focus()
-		} else {
-			m.TryIt.HeaderTable.ParamField = "name"
-			m.TryIt.HeaderTable.ValueInput.Blur()
-			m.TryIt.HeaderTable.NameInput.Focus()
-		}
-		return m, nil
-	case "enter":
-		if isAddNew {
-			name := strings.TrimSpace(m.TryIt.HeaderTable.NameInput.Value())
-			if name != "" {
-				in := m.TryIt.NewParamIn
-				if in == "" {
-					in = "query"
-				}
-				custom = append(custom, storage.CustomParameter{
-					ID: uuid.NewString(), Name: name, Value: m.TryIt.HeaderTable.ValueInput.Value(),
-					In: in, Enabled: true,
-				})
-				m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
-				m.TryIt.ParamCursor = len(params) + len(custom) - 1
-				m.TryIt.ParamEditing = false
-			}
-		} else {
-			idx := cursor - len(params)
-			custom[idx].Name = m.TryIt.HeaderTable.NameInput.Value()
-			custom[idx].Value = m.TryIt.HeaderTable.ValueInput.Value()
-			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
-			m.TryIt.ParamEditing = false
-		}
-		return m, nil
-	}
-
+	var updated []storage.CustomParameter
+	var done bool
 	var cmd tea.Cmd
-	if m.TryIt.HeaderTable.ParamField == "name" {
-		m.TryIt.HeaderTable.NameInput, cmd = m.TryIt.HeaderTable.NameInput.Update(msg)
-	} else {
-		m.TryIt.HeaderTable.ValueInput, cmd = m.TryIt.HeaderTable.ValueInput.Update(msg)
+	m.TryIt.HeaderTable, updated, done, cmd = m.TryIt.HeaderTable.handleParamRowEditKey(msg, isAddNew, idx, custom, m.TryIt.NewParamIn)
+	if updated != nil {
+		m.TryIt.CustomParams = mergeCustomParams(headerParams, updated)
+		if isAddNew {
+			m.TryIt.ParamCursor = len(params) + len(updated) - 1
+		}
+	}
+	if done {
+		m.TryIt.ParamEditing = false
 	}
 	return m, cmd
 }
