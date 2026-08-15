@@ -640,3 +640,65 @@ func TestManualPanelRendersCustomParamRowsViaFullView(t *testing.T) {
 		t.Errorf("expected the custom param row to render via View(), got:\n%s", out)
 	}
 }
+
+// TestManualBodyScrollPastFocusIsSymmetric is a regression test: the
+// three-fix arc that gave try-it-out's BODY-focused section 'j'/'k'
+// scrolling (can't-scroll-down, then can't-scroll-back-up, then
+// overscroll-accumulation) never reached the manual builder's structurally
+// identical BODY-focused block — it had no "j"/"down" case at all, and
+// RightScroll was never reset on entering the builder or clamped against
+// its actual content. Mirrors TestScrollPastBodyWhenFocused/
+// TestScrollBackUpAfterScrollingPastBody/
+// TestRightPanelScrollClampsInsteadOfAccumulating (tryit_test.go/
+// model_test.go) for the Manual side.
+func TestManualBodyScrollPastFocusIsSymmetric(t *testing.T) {
+	m := New(loadTestSpec(t), "")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	m = next.(Model)
+	m = step(m, "m") // enter manual builder
+	if isWriteMethod(m.Manual.Method) {
+		t.Fatalf("setup: expected a non-write default method")
+	}
+	m = step(m, "m") // cycle method until BODY exists (GET -> POST)
+	if !isWriteMethod(m.Manual.Method) {
+		t.Fatalf("setup: expected a write method after cycling, got %s", m.Manual.Method)
+	}
+
+	// 'j' past the single add-new PARAMETERS row focuses BODY.
+	m = step(m, "j")
+	if !m.Manual.BodyFocused {
+		t.Fatalf("setup: expected BODY focused, ParamCursor=%d", m.Manual.ParamCursor)
+	}
+	floor := m.Manual.BodyScrollFloor
+
+	// Scrolling down must actually move RightScroll (previously: no "j"
+	// case at all, keypress silently swallowed) and must clamp instead of
+	// accumulating past the content's real extent.
+	for range 50 {
+		m = step(m, "j")
+	}
+	maxScroll := m.RightScroll
+	if maxScroll <= floor {
+		t.Fatalf("expected RightScroll to increase past the floor, stayed at %d", maxScroll)
+	}
+	if maxScroll >= 50 {
+		t.Errorf("expected clampRightScroll to cap overscroll, got %d after 50 presses", maxScroll)
+	}
+
+	// Scrolling back up must be symmetric: one step per 'k' press down to
+	// the floor, only unfocusing once there.
+	for m.RightScroll > floor {
+		before := m.RightScroll
+		m = step(m, "k")
+		if m.RightScroll != before-1 {
+			t.Fatalf("expected RightScroll to decrement by 1, got %d -> %d", before, m.RightScroll)
+		}
+		if !m.Manual.BodyFocused {
+			t.Fatalf("unfocused before reaching the floor (RightScroll=%d, floor=%d)", m.RightScroll, floor)
+		}
+	}
+	m = step(m, "k")
+	if m.Manual.BodyFocused {
+		t.Errorf("expected 'k' at the scroll floor to unfocus BODY")
+	}
+}
