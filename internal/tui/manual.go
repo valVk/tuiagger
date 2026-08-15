@@ -36,22 +36,17 @@ type manualState struct {
 	EditingPath bool
 	PathInput   textinput.Model
 
-	// HeadersFocused/HeaderCursor/HeaderEditing back the HEADERS table
-	// (In=="header" params only) — mirrors tryItState's fields exactly,
-	// see tryit.go's renderHeadersSection/handleHeadersFocusedKey.
-	HeadersFocused bool
-	HeaderCursor   int
-	HeaderEditing  bool
+	// HeaderTable backs the HEADERS table (In=="header" params only) —
+	// mirrors tryItState's field exactly, see headertable.go.
+	HeaderTable headerTableState
 
 	// ParamCursor/ParamEditing address the PARAMETERS table (In!="header"
 	// params) — the *default* focus whenever nothing else claims it, same
-	// as try-it-out.
+	// as try-it-out. Name/value editing widgets live on HeaderTable, shared
+	// with HEADERS editing since only one table is ever mid-edit at once.
 	ParamCursor  int // 0..len(non-header Params); == len is the "add new" row
 	ParamEditing bool
 	ParamAddNew  bool   // editing the add-new row rather than an existing one
-	ParamField   string // "name" | "value" — shared by PARAMETERS and HEADERS editing, only one active at a time
-	NameInput    textinput.Model
-	ValueInput   textinput.Model
 	NewParamIn   string // in-progress type ("query"/"path") for the PARAMETERS add-new row
 
 	BodyFocused bool
@@ -75,9 +70,11 @@ func newManualState() manualState {
 		Method:     "GET",
 		NewParamIn: "query",
 		PathInput:  textinput.New(),
-		NameInput:  textinput.New(),
-		ValueInput: textinput.New(),
-		BodyInput:  newBodyTextarea(),
+		HeaderTable: headerTableState{
+			NameInput:  textinput.New(),
+			ValueInput: textinput.New(),
+		},
+		BodyInput: newBodyTextarea(),
 	}
 }
 
@@ -141,11 +138,23 @@ func (m Model) handleManualKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.Manual.EditingBody {
 		return m.handleManualBodyKey(msg)
 	}
-	if m.Manual.HeaderEditing {
-		return m.handleManualHeaderEditKey(msg, headerParams, params)
+	if m.Manual.HeaderTable.Editing {
+		var merged []storage.CustomParameter
+		var cmd tea.Cmd
+		m.Manual.HeaderTable, merged, cmd = m.Manual.HeaderTable.handleEditKey(msg, headerParams, params)
+		if merged != nil {
+			m.Manual.Params = merged
+		}
+		return m, cmd
 	}
-	if m.Manual.HeadersFocused {
-		return m.handleManualHeadersFocusedKey(msg, headerParams, params)
+	if m.Manual.HeaderTable.Focused {
+		var merged []storage.CustomParameter
+		var cmd tea.Cmd
+		m.Manual.HeaderTable, merged, cmd = m.Manual.HeaderTable.handleFocusedKey(msg, headerParams, params)
+		if merged != nil {
+			m.Manual.Params = merged
+		}
+		return m, cmd
 	}
 	if m.Manual.BodyFocused {
 		switch key {
@@ -212,7 +221,7 @@ func (m Model) handleManualKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.Manual.ParamCursor > 0 {
 			m.Manual.ParamCursor--
 		} else {
-			m.Manual.HeadersFocused = true
+			m.Manual.HeaderTable.Focused = true
 		}
 		return m, nil
 	case "i":
@@ -276,131 +285,22 @@ func (m Model) handleManualBodyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// handleManualHeadersFocusedKey/handleManualHeaderEditKey mirror tryit.go's
-// handleHeadersFocusedKey/handleHeaderEditKey exactly (same
-// useHeadersNavigation.ts semantics) — kept as separate functions rather
-// than shared with tryit.go's since each is tightly coupled to its own
-// m.Manual./m.TryIt. state fields with no cheap way to factor that out in
-// Go without an interface neither call site would otherwise need.
-func (m Model) handleManualHeadersFocusedKey(msg tea.KeyMsg, headerParams, params []storage.CustomParameter) (tea.Model, tea.Cmd) {
-	totalRows := len(headerParams) + 1
-	switch msg.String() {
-	case "j", "down":
-		if m.Manual.HeaderCursor < totalRows-1 {
-			m.Manual.HeaderCursor++
-		} else {
-			m.Manual.HeadersFocused = false
-		}
-		return m, nil
-	case "k", "up":
-		if m.Manual.HeaderCursor > 0 {
-			m.Manual.HeaderCursor--
-		} else {
-			m.Manual.HeadersFocused = false
-		}
-		return m, nil
-	case "tab", "esc":
-		m.Manual.HeadersFocused = false
-		return m, nil
-	case "i":
-		m.Manual.HeaderEditing = true
-		m.Manual.ParamField = "name"
-		if m.Manual.HeaderCursor < len(headerParams) {
-			p := headerParams[m.Manual.HeaderCursor]
-			m.Manual.NameInput.SetValue(p.Name)
-			m.Manual.ValueInput.SetValue(p.Value)
-		} else {
-			m.Manual.NameInput.SetValue("")
-			m.Manual.ValueInput.SetValue("")
-		}
-		m.Manual.NameInput.Focus()
-		m.Manual.ValueInput.Blur()
-		return m, nil
-	case "x":
-		if m.Manual.HeaderCursor < len(headerParams) {
-			idx := m.Manual.HeaderCursor
-			headerParams = append(headerParams[:idx:idx], headerParams[idx+1:]...)
-			m.Manual.Params = mergeCustomParams(headerParams, params)
-			if m.Manual.HeaderCursor > len(headerParams) {
-				m.Manual.HeaderCursor = len(headerParams)
-			}
-		}
-		return m, nil
-	case "d":
-		if m.Manual.HeaderCursor < len(headerParams) {
-			headerParams[m.Manual.HeaderCursor].Enabled = !headerParams[m.Manual.HeaderCursor].Enabled
-			m.Manual.Params = mergeCustomParams(headerParams, params)
-		}
-		return m, nil
-	}
-	return m, nil
-}
-
-func (m Model) handleManualHeaderEditKey(msg tea.KeyMsg, headerParams, params []storage.CustomParameter) (tea.Model, tea.Cmd) {
-	isAddNew := m.Manual.HeaderCursor >= len(headerParams)
-
-	switch msg.String() {
-	case "esc":
-		m.Manual.HeaderEditing = false
-		return m, nil
-	case "tab":
-		if m.Manual.ParamField == "name" {
-			m.Manual.ParamField = "value"
-			m.Manual.NameInput.Blur()
-			m.Manual.ValueInput.Focus()
-		} else {
-			m.Manual.ParamField = "name"
-			m.Manual.ValueInput.Blur()
-			m.Manual.NameInput.Focus()
-		}
-		return m, nil
-	case "enter":
-		if isAddNew {
-			name := strings.TrimSpace(m.Manual.NameInput.Value())
-			if name != "" {
-				headerParams = append(headerParams, storage.CustomParameter{
-					ID: uuid.NewString(), Name: name, Value: m.Manual.ValueInput.Value(),
-					In: "header", Enabled: true,
-				})
-				m.Manual.Params = mergeCustomParams(headerParams, params)
-				m.Manual.HeaderCursor = len(headerParams) - 1
-				m.Manual.HeaderEditing = false
-			}
-		} else {
-			idx := m.Manual.HeaderCursor
-			headerParams[idx].Name = m.Manual.NameInput.Value()
-			headerParams[idx].Value = m.Manual.ValueInput.Value()
-			m.Manual.Params = mergeCustomParams(headerParams, params)
-			m.Manual.HeaderEditing = false
-		}
-		return m, nil
-	}
-
-	var cmd tea.Cmd
-	if m.Manual.ParamField == "name" {
-		m.Manual.NameInput, cmd = m.Manual.NameInput.Update(msg)
-	} else {
-		m.Manual.ValueInput, cmd = m.Manual.ValueInput.Update(msg)
-	}
-	return m, cmd
-}
-
 func (m Model) enterManualParamEdit(params []storage.CustomParameter) Model {
 	if m.Manual.ParamCursor < len(params) {
 		p := params[m.Manual.ParamCursor]
 		m.Manual.ParamAddNew = false
-		m.Manual.NameInput.SetValue(p.Name)
-		m.Manual.ValueInput.SetValue(p.Value)
+		m.Manual.HeaderTable.NameInput.SetValue(p.Name)
+		m.Manual.HeaderTable.ValueInput.SetValue(p.Value)
 	} else {
 		m.Manual.ParamAddNew = true
-		m.Manual.NameInput.SetValue("")
-		m.Manual.ValueInput.SetValue("")
+		m.Manual.HeaderTable.NameInput.SetValue("")
+		m.Manual.HeaderTable.ValueInput.SetValue("")
 		m.Manual.NewParamIn = "query"
 	}
-	m.Manual.ParamField = "name"
+	m.Manual.HeaderTable.ParamField = "name"
 	m.Manual.ParamEditing = true
-	m.Manual.NameInput.Focus()
-	m.Manual.ValueInput.Blur()
+	m.Manual.HeaderTable.NameInput.Focus()
+	m.Manual.HeaderTable.ValueInput.Blur()
 	return m
 }
 
@@ -410,22 +310,22 @@ func (m Model) handleManualParamEditKey(msg tea.KeyMsg, headerParams, params []s
 		m.Manual.ParamEditing = false
 		return m, nil
 	case "tab":
-		if m.Manual.ParamField == "name" {
-			m.Manual.ParamField = "value"
-			m.Manual.NameInput.Blur()
-			m.Manual.ValueInput.Focus()
+		if m.Manual.HeaderTable.ParamField == "name" {
+			m.Manual.HeaderTable.ParamField = "value"
+			m.Manual.HeaderTable.NameInput.Blur()
+			m.Manual.HeaderTable.ValueInput.Focus()
 		} else {
-			m.Manual.ParamField = "name"
-			m.Manual.ValueInput.Blur()
-			m.Manual.NameInput.Focus()
+			m.Manual.HeaderTable.ParamField = "name"
+			m.Manual.HeaderTable.ValueInput.Blur()
+			m.Manual.HeaderTable.NameInput.Focus()
 		}
 		return m, nil
 	case "enter":
 		if m.Manual.ParamAddNew {
-			name := strings.TrimSpace(m.Manual.NameInput.Value())
+			name := strings.TrimSpace(m.Manual.HeaderTable.NameInput.Value())
 			if name != "" {
 				params = append(params, storage.CustomParameter{
-					ID: uuid.NewString(), Name: name, Value: m.Manual.ValueInput.Value(),
+					ID: uuid.NewString(), Name: name, Value: m.Manual.HeaderTable.ValueInput.Value(),
 					In: m.Manual.NewParamIn, Enabled: true,
 				})
 				m.Manual.Params = mergeCustomParams(headerParams, params)
@@ -434,8 +334,8 @@ func (m Model) handleManualParamEditKey(msg tea.KeyMsg, headerParams, params []s
 			}
 		} else {
 			idx := m.Manual.ParamCursor
-			params[idx].Name = m.Manual.NameInput.Value()
-			params[idx].Value = m.Manual.ValueInput.Value()
+			params[idx].Name = m.Manual.HeaderTable.NameInput.Value()
+			params[idx].Value = m.Manual.HeaderTable.ValueInput.Value()
 			m.Manual.Params = mergeCustomParams(headerParams, params)
 			m.Manual.ParamEditing = false
 		}
@@ -443,10 +343,10 @@ func (m Model) handleManualParamEditKey(msg tea.KeyMsg, headerParams, params []s
 	}
 
 	var cmd tea.Cmd
-	if m.Manual.ParamField == "name" {
-		m.Manual.NameInput, cmd = m.Manual.NameInput.Update(msg)
+	if m.Manual.HeaderTable.ParamField == "name" {
+		m.Manual.HeaderTable.NameInput, cmd = m.Manual.HeaderTable.NameInput.Update(msg)
 	} else {
-		m.Manual.ValueInput, cmd = m.Manual.ValueInput.Update(msg)
+		m.Manual.HeaderTable.ValueInput, cmd = m.Manual.HeaderTable.ValueInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -619,20 +519,20 @@ func (m Model) renderManualPanel(height, width int) string {
 	// HeadersSection.tsx renders above ParametersSection here too, matching
 	// try-it-out's renderTryItLines (same stacked HEADERS -> PARAMETERS ->
 	// BODY focus order per useManualPanelKeyboard.ts).
-	headersLines, _ := renderHeadersSection(headerParams, manual.HeaderCursor, manual.HeadersFocused, manual.HeaderEditing, manual.ParamField, manual.NameInput, manual.ValueInput)
+	headersLines, _ := renderHeadersSection(headerParams, manual.HeaderTable.Cursor, manual.HeaderTable.Focused, manual.HeaderTable.Editing, manual.HeaderTable.ParamField, manual.HeaderTable.NameInput, manual.HeaderTable.ValueInput)
 	lines = append(lines, headersLines...)
 
 	// PARAMETERS is the default focus: "active" (cursor highlighting)
 	// whenever HEADERS/BODY haven't claimed it, matching
 	// ParametersSection.tsx's isActive={isActive && !bodyTabFocused &&
 	// !editingBody && !headersFocused}.
-	paramsActive := !manual.HeadersFocused && !manual.BodyFocused
+	paramsActive := !manual.HeaderTable.Focused && !manual.BodyFocused
 
 	// Matches ParametersSection.tsx's heading exactly (this section is
 	// reused verbatim for the manual builder's non-header custom params) —
 	// "PARAMETERS", not "PARAMS", same hint wording as try-it-out's.
 	lines = append(lines, "", boldStyle.Render("PARAMETERS")+dimStyle.Render(" j/k: move | i: edit | d: toggle | x: del | c: type"))
-	widgets := paramEditWidgets{Field: manual.ParamField, NameInput: manual.NameInput, ValueInput: manual.ValueInput, NewParamIn: manual.NewParamIn}
+	widgets := paramEditWidgets{Field: manual.HeaderTable.ParamField, NameInput: manual.HeaderTable.NameInput, ValueInput: manual.HeaderTable.ValueInput, NewParamIn: manual.NewParamIn}
 	lines = append(lines, paramTableHeader())
 	lines = append(lines, dimStyle.Render(strings.Repeat("─", inner)))
 	for i, p := range params {

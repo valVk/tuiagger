@@ -70,13 +70,16 @@ documentation (`CLAUDE.md` already covers the shipped architecture; update
 that too if the refactor changes anything user-facing enough to warrant it,
 though this refactor shouldn't).
 
-### [ ] Step 1 — Baseline
+### [x] Step 1 — Baseline
 
 Run `task check` on the current branch tip and record the result (test
 count, pass/fail) as the reference point every later step is compared
 against.
 
-### [ ] Step 2 — Extract shared HEADERS-table component
+Result: `task check` green (fmt-check, vet, test all pass). `go test
+./... -v`: 213 PASS, 0 FAIL. Reference point for Steps 2-6.
+
+### [x] Step 2 — Extract shared HEADERS-table component
 
 New file `internal/tui/headertable.go`. Define a `headerTableState` struct
 holding what's currently duplicated across `tryItState`/`manualState`:

@@ -78,17 +78,17 @@ func TestManualCycleMethod(t *testing.T) {
 func TestManualDefaultFocusIsParametersWithBoundaryCrossing(t *testing.T) {
 	m := modelWithStore(t)
 	m = step(m, "m")
-	if m.Manual.HeadersFocused || m.Manual.BodyFocused {
+	if m.Manual.HeaderTable.Focused || m.Manual.BodyFocused {
 		t.Fatalf("expected PARAMETERS to be the default focus")
 	}
 
 	// 'k' at the first (only) PARAMETERS row moves focus up into HEADERS.
 	m = step(m, "k")
-	if !m.Manual.HeadersFocused {
+	if !m.Manual.HeaderTable.Focused {
 		t.Errorf("expected 'k' at param row 0 to focus HEADERS")
 	}
 	m = step(m, "j") // exit HEADERS back down (boundary crossing both ways)
-	if m.Manual.HeadersFocused {
+	if m.Manual.HeaderTable.Focused {
 		t.Errorf("expected 'j' at the HEADERS add-row to exit back to PARAMETERS")
 	}
 
@@ -152,11 +152,11 @@ func TestManualDeleteParamRow(t *testing.T) {
 func TestManualAddHeaderViaHeadersSection(t *testing.T) {
 	m := modelWithStore(t)
 	m = step(m, "m", "k")
-	if !m.Manual.HeadersFocused {
+	if !m.Manual.HeaderTable.Focused {
 		t.Fatalf("expected 'k' at param row 0 to focus HEADERS")
 	}
 	m = step(m, "i")
-	if !m.Manual.HeaderEditing {
+	if !m.Manual.HeaderTable.Editing {
 		t.Fatalf("expected 'i' to start editing the add-new header row")
 	}
 	m = typeText(m, "X-Test")
@@ -164,7 +164,7 @@ func TestManualAddHeaderViaHeadersSection(t *testing.T) {
 	m = typeText(m, "hello")
 	m = step(m, "enter")
 
-	if m.Manual.HeaderEditing {
+	if m.Manual.HeaderTable.Editing {
 		t.Errorf("expected editing to end after Enter")
 	}
 	headerParams, params := splitCustomParams(m.Manual.Params)

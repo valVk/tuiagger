@@ -60,8 +60,8 @@ func (m Model) enterTryIt() Model {
 			}
 		}
 	}
-	state.ValueInput = textinput.New()
-	state.NameInput = textinput.New()
+	state.HeaderTable.ValueInput = textinput.New()
+	state.HeaderTable.NameInput = textinput.New()
 	state.NewParamIn = "query"
 	state.PathInput = textinput.New()
 	state.BodyInput = newBodyTextarea()
@@ -213,12 +213,24 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleBodyFocusedKey(msg)
 	}
 
-	if m.TryIt.HeaderEditing {
-		return m.handleHeaderEditKey(msg, headerParams, custom)
+	if m.TryIt.HeaderTable.Editing {
+		var merged []storage.CustomParameter
+		var cmd tea.Cmd
+		m.TryIt.HeaderTable, merged, cmd = m.TryIt.HeaderTable.handleEditKey(msg, headerParams, custom)
+		if merged != nil {
+			m.TryIt.CustomParams = merged
+		}
+		return m, cmd
 	}
 
-	if m.TryIt.HeadersFocused {
-		return m.handleHeadersFocusedKey(msg, headerParams, custom)
+	if m.TryIt.HeaderTable.Focused {
+		var merged []storage.CustomParameter
+		var cmd tea.Cmd
+		m.TryIt.HeaderTable, merged, cmd = m.TryIt.HeaderTable.handleFocusedKey(msg, headerParams, custom)
+		if merged != nil {
+			m.TryIt.CustomParams = merged
+		}
+		return m, cmd
 	}
 
 	if m.TryIt.ParamEditing {
@@ -296,7 +308,7 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			// Matches ParametersSection.tsx's onTabBack: 'k' at the first
 			// PARAMETERS row moves focus up into HEADERS.
-			m.TryIt.HeadersFocused = true
+			m.TryIt.HeaderTable.Focused = true
 		}
 		return m, nil
 	case "i":
@@ -379,23 +391,23 @@ func (m Model) enterParamEdit(params []openapi.Parameter, custom []storage.Custo
 			return m
 		}
 		m.TryIt.ParamEditing = true
-		m.TryIt.ValueInput.SetValue(m.TryIt.ParamValues[p.Name])
-		m.TryIt.ValueInput.Focus()
+		m.TryIt.HeaderTable.ValueInput.SetValue(m.TryIt.ParamValues[p.Name])
+		m.TryIt.HeaderTable.ValueInput.Focus()
 	case cursor < len(params)+len(custom):
 		p := custom[cursor-len(params)]
 		m.TryIt.ParamEditing = true
-		m.TryIt.ParamField = "name"
-		m.TryIt.NameInput.SetValue(p.Name)
-		m.TryIt.NameInput.Focus()
-		m.TryIt.ValueInput.SetValue(p.Value)
-		m.TryIt.ValueInput.Blur()
+		m.TryIt.HeaderTable.ParamField = "name"
+		m.TryIt.HeaderTable.NameInput.SetValue(p.Name)
+		m.TryIt.HeaderTable.NameInput.Focus()
+		m.TryIt.HeaderTable.ValueInput.SetValue(p.Value)
+		m.TryIt.HeaderTable.ValueInput.Blur()
 	default: // add-new row
 		m.TryIt.ParamEditing = true
-		m.TryIt.ParamField = "name"
-		m.TryIt.NameInput.SetValue("")
-		m.TryIt.NameInput.Focus()
-		m.TryIt.ValueInput.SetValue("")
-		m.TryIt.ValueInput.Blur()
+		m.TryIt.HeaderTable.ParamField = "name"
+		m.TryIt.HeaderTable.NameInput.SetValue("")
+		m.TryIt.HeaderTable.NameInput.Focus()
+		m.TryIt.HeaderTable.ValueInput.SetValue("")
+		m.TryIt.HeaderTable.ValueInput.Blur()
 	}
 	return m
 }
@@ -411,7 +423,7 @@ func (m Model) handleParamEditKey(msg tea.KeyMsg, params []openapi.Parameter, he
 func (m Model) handleSpecParamEditKey(msg tea.KeyMsg, p openapi.Parameter) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "enter":
-		m.TryIt.ParamValues[p.Name] = m.TryIt.ValueInput.Value()
+		m.TryIt.ParamValues[p.Name] = m.TryIt.HeaderTable.ValueInput.Value()
 		m.TryIt.ParamEditing = false
 		return m, nil
 	case "left", "right":
@@ -429,7 +441,7 @@ func (m Model) handleSpecParamEditKey(msg tea.KeyMsg, p openapi.Parameter) (tea.
 	}
 
 	var cmd tea.Cmd
-	m.TryIt.ValueInput, cmd = m.TryIt.ValueInput.Update(msg)
+	m.TryIt.HeaderTable.ValueInput, cmd = m.TryIt.HeaderTable.ValueInput.Update(msg)
 	return m, cmd
 }
 
@@ -445,26 +457,26 @@ func (m Model) handleCustomParamEditKey(msg tea.KeyMsg, params []openapi.Paramet
 		m.TryIt.ParamEditing = false
 		return m, nil
 	case "tab":
-		if m.TryIt.ParamField == "name" {
-			m.TryIt.ParamField = "value"
-			m.TryIt.NameInput.Blur()
-			m.TryIt.ValueInput.Focus()
+		if m.TryIt.HeaderTable.ParamField == "name" {
+			m.TryIt.HeaderTable.ParamField = "value"
+			m.TryIt.HeaderTable.NameInput.Blur()
+			m.TryIt.HeaderTable.ValueInput.Focus()
 		} else {
-			m.TryIt.ParamField = "name"
-			m.TryIt.ValueInput.Blur()
-			m.TryIt.NameInput.Focus()
+			m.TryIt.HeaderTable.ParamField = "name"
+			m.TryIt.HeaderTable.ValueInput.Blur()
+			m.TryIt.HeaderTable.NameInput.Focus()
 		}
 		return m, nil
 	case "enter":
 		if isAddNew {
-			name := strings.TrimSpace(m.TryIt.NameInput.Value())
+			name := strings.TrimSpace(m.TryIt.HeaderTable.NameInput.Value())
 			if name != "" {
 				in := m.TryIt.NewParamIn
 				if in == "" {
 					in = "query"
 				}
 				custom = append(custom, storage.CustomParameter{
-					ID: uuid.NewString(), Name: name, Value: m.TryIt.ValueInput.Value(),
+					ID: uuid.NewString(), Name: name, Value: m.TryIt.HeaderTable.ValueInput.Value(),
 					In: in, Enabled: true,
 				})
 				m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
@@ -473,8 +485,8 @@ func (m Model) handleCustomParamEditKey(msg tea.KeyMsg, params []openapi.Paramet
 			}
 		} else {
 			idx := cursor - len(params)
-			custom[idx].Name = m.TryIt.NameInput.Value()
-			custom[idx].Value = m.TryIt.ValueInput.Value()
+			custom[idx].Name = m.TryIt.HeaderTable.NameInput.Value()
+			custom[idx].Value = m.TryIt.HeaderTable.ValueInput.Value()
 			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
 			m.TryIt.ParamEditing = false
 		}
@@ -482,229 +494,12 @@ func (m Model) handleCustomParamEditKey(msg tea.KeyMsg, params []openapi.Paramet
 	}
 
 	var cmd tea.Cmd
-	if m.TryIt.ParamField == "name" {
-		m.TryIt.NameInput, cmd = m.TryIt.NameInput.Update(msg)
+	if m.TryIt.HeaderTable.ParamField == "name" {
+		m.TryIt.HeaderTable.NameInput, cmd = m.TryIt.HeaderTable.NameInput.Update(msg)
 	} else {
-		m.TryIt.ValueInput, cmd = m.TryIt.ValueInput.Update(msg)
+		m.TryIt.HeaderTable.ValueInput, cmd = m.TryIt.HeaderTable.ValueInput.Update(msg)
 	}
 	return m, cmd
-}
-
-// handleHeadersFocusedKey matches useHeadersNavigation.ts's non-insert-mode
-// branch: j/k move within the HEADERS table (NAME/VALUE rows + one
-// always-present add-new row), overflowing either boundary exits headers
-// focus entirely (TS's onTabOut/onTabBack both just clear headersFocused,
-// landing back on whichever PARAMETERS row was active before).
-func (m Model) handleHeadersFocusedKey(msg tea.KeyMsg, headerParams, custom []storage.CustomParameter) (tea.Model, tea.Cmd) {
-	totalRows := len(headerParams) + 1
-	switch msg.String() {
-	case "j", "down":
-		if m.TryIt.HeaderCursor < totalRows-1 {
-			m.TryIt.HeaderCursor++
-		} else {
-			m.TryIt.HeadersFocused = false
-		}
-		return m, nil
-	case "k", "up":
-		if m.TryIt.HeaderCursor > 0 {
-			m.TryIt.HeaderCursor--
-		} else {
-			m.TryIt.HeadersFocused = false
-		}
-		return m, nil
-	case "tab", "esc":
-		m.TryIt.HeadersFocused = false
-		return m, nil
-	case "i":
-		m.TryIt.HeaderEditing = true
-		m.TryIt.ParamField = "name"
-		if m.TryIt.HeaderCursor < len(headerParams) {
-			p := headerParams[m.TryIt.HeaderCursor]
-			m.TryIt.NameInput.SetValue(p.Name)
-			m.TryIt.ValueInput.SetValue(p.Value)
-		} else {
-			m.TryIt.NameInput.SetValue("")
-			m.TryIt.ValueInput.SetValue("")
-		}
-		m.TryIt.NameInput.Focus()
-		m.TryIt.ValueInput.Blur()
-		return m, nil
-	case "x":
-		if m.TryIt.HeaderCursor < len(headerParams) {
-			idx := m.TryIt.HeaderCursor
-			headerParams = append(headerParams[:idx:idx], headerParams[idx+1:]...)
-			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
-			if m.TryIt.HeaderCursor > len(headerParams) {
-				m.TryIt.HeaderCursor = len(headerParams)
-			}
-		}
-		return m, nil
-	case "d":
-		if m.TryIt.HeaderCursor < len(headerParams) {
-			headerParams[m.TryIt.HeaderCursor].Enabled = !headerParams[m.TryIt.HeaderCursor].Enabled
-			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
-		}
-		return m, nil
-	}
-	return m, nil
-}
-
-// handleHeaderEditKey matches useHeadersNavigation.ts's insertMode branch:
-// Tab toggles name/value focus, Enter commits, Esc cancels — no enum/type
-// cycling, since header values are always plain strings.
-func (m Model) handleHeaderEditKey(msg tea.KeyMsg, headerParams, custom []storage.CustomParameter) (tea.Model, tea.Cmd) {
-	isAddNew := m.TryIt.HeaderCursor >= len(headerParams)
-
-	switch msg.String() {
-	case "esc":
-		m.TryIt.HeaderEditing = false
-		return m, nil
-	case "tab":
-		if m.TryIt.ParamField == "name" {
-			m.TryIt.ParamField = "value"
-			m.TryIt.NameInput.Blur()
-			m.TryIt.ValueInput.Focus()
-		} else {
-			m.TryIt.ParamField = "name"
-			m.TryIt.ValueInput.Blur()
-			m.TryIt.NameInput.Focus()
-		}
-		return m, nil
-	case "enter":
-		if isAddNew {
-			name := strings.TrimSpace(m.TryIt.NameInput.Value())
-			if name != "" {
-				headerParams = append(headerParams, storage.CustomParameter{
-					ID: uuid.NewString(), Name: name, Value: m.TryIt.ValueInput.Value(),
-					In: "header", Enabled: true,
-				})
-				m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
-				m.TryIt.HeaderCursor = len(headerParams) - 1
-				m.TryIt.HeaderEditing = false
-			}
-		} else {
-			idx := m.TryIt.HeaderCursor
-			headerParams[idx].Name = m.TryIt.NameInput.Value()
-			headerParams[idx].Value = m.TryIt.ValueInput.Value()
-			m.TryIt.CustomParams = mergeCustomParams(headerParams, custom)
-			m.TryIt.HeaderEditing = false
-		}
-		return m, nil
-	}
-
-	var cmd tea.Cmd
-	if m.TryIt.ParamField == "name" {
-		m.TryIt.NameInput, cmd = m.TryIt.NameInput.Update(msg)
-	} else {
-		m.TryIt.ValueInput, cmd = m.TryIt.ValueInput.Update(msg)
-	}
-	return m, cmd
-}
-
-const (
-	headerCursorWidth = 3
-	headerNameWidth   = 25
-	headerValueWidth  = 28 // HeadersSection.tsx's own VALUE_WIDTH, distinct from paramValueWidth
-)
-
-// renderHeadersSection matches HeadersSection.tsx: a NAME/VALUE-only table
-// (no TYPE/DESCRIPTION, no enum cycling) for CustomParams entries with
-// In=="header", plus an always-present add-new row. Returns the rendered
-// lines and the line index of the current cursor row (for auto-scroll),
-// matching renderTryItLines's cursorLine convention.
-func renderHeadersSection(headers []storage.CustomParameter, cursor int, focused, editing bool, field string, nameInput, valueInput textinput.Model) ([]string, int) {
-	hint := ""
-	if focused {
-		if editing {
-			hint = " Tab: switch field | Enter: confirm | Esc: cancel"
-		} else {
-			hint = " j/k: move | i: edit | d: toggle | x: del"
-		}
-	}
-	lines := []string{
-		boldStyle.Render("HEADERS") + dimStyle.Render(hint),
-		strings.Repeat(" ", headerCursorWidth) + dimStyle.Bold(true).Render(padRight("NAME", headerNameWidth)+"VALUE"),
-	}
-
-	cursorLine := -1
-	for i, h := range headers {
-		selected := focused && i == cursor
-		isEditingThis := focused && editing && i == cursor
-		if selected {
-			cursorLine = len(lines)
-		}
-		rowCursor := strings.Repeat(" ", headerCursorWidth)
-		if selected {
-			rowCursor = cyanStyle.Render(padRight("> ", headerCursorWidth))
-		}
-		var nameCell, valueCell string
-		if isEditingThis && field == "name" {
-			nameCell = padRight(nameInput.View(), headerNameWidth)
-		} else {
-			nameStyle := lipgloss.NewStyle()
-			if selected {
-				nameStyle = cyanStyle
-			}
-			plain := h.Name
-			if plain == "" {
-				plain = "-"
-			}
-			nameCell = nameStyle.Render(padRight(truncateTS(plain, headerNameWidth), headerNameWidth))
-		}
-		if isEditingThis && field == "value" {
-			valueCell = valueInput.View()
-		} else {
-			plain := h.Value
-			if plain == "" {
-				plain = "-"
-			}
-			valueStyle := lipgloss.NewStyle().Foreground(color2xx)
-			if !h.Enabled {
-				valueStyle = lipgloss.NewStyle().Foreground(inactiveBorderColor)
-			}
-			valueCell = valueStyle.Render(truncateTS(plain, headerValueWidth))
-		}
-		lines = append(lines, rowCursor+nameCell+valueCell)
-	}
-
-	addSelected := focused && cursor == len(headers)
-	isAddingNew := addSelected && editing
-	if addSelected {
-		cursorLine = len(lines)
-	}
-	addCursor := strings.Repeat(" ", headerCursorWidth)
-	if addSelected {
-		addCursor = cyanStyle.Render(padRight("> ", headerCursorWidth))
-	}
-	switch {
-	case isAddingNew:
-		var nameCell, valueCell string
-		if field == "name" {
-			nameCell = padRight(nameInput.View(), headerNameWidth)
-		} else {
-			plain := nameInput.Value()
-			if plain == "" {
-				plain = "-"
-			}
-			nameCell = cyanStyle.Render(padRight(truncateTS(plain, headerNameWidth), headerNameWidth))
-		}
-		if field == "value" {
-			valueCell = valueInput.View()
-		} else {
-			plain := valueInput.Value()
-			if plain == "" {
-				plain = "-"
-			}
-			valueCell = dimStyle.Render(truncateTS(plain, headerValueWidth))
-		}
-		lines = append(lines, addCursor+nameCell+valueCell)
-	case addSelected:
-		lines = append(lines, addCursor+cyanStyle.Render("[ i: add header ]"))
-	default:
-		lines = append(lines, addCursor+dimStyle.Render("[ + ]"))
-	}
-
-	return lines, cursorLine
 }
 
 // renderTryItBodySection matches RightPanel.tsx's isTryItMode BODY box: a
@@ -1176,15 +971,15 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) ([]string
 	// and any way to add a custom query/path param for such endpoints.
 	params := sortedParameters(op.Parameters)
 	headerParams, custom := splitCustomParams(m.TryIt.CustomParams)
-	widgets := paramEditWidgets{Field: m.TryIt.ParamField, NameInput: m.TryIt.NameInput, ValueInput: m.TryIt.ValueInput, NewParamIn: m.TryIt.NewParamIn}
+	widgets := paramEditWidgets{Field: m.TryIt.HeaderTable.ParamField, NameInput: m.TryIt.HeaderTable.NameInput, ValueInput: m.TryIt.HeaderTable.ValueInput, NewParamIn: m.TryIt.NewParamIn}
 
 	// HeadersSection.tsx renders above ParametersSection, matching TS's
 	// stacked focus order (up from PARAMETERS row 0 enters HEADERS).
-	headersLines, headerCursorLine := renderHeadersSection(headerParams, m.TryIt.HeaderCursor, m.TryIt.HeadersFocused, m.TryIt.HeaderEditing, m.TryIt.ParamField, m.TryIt.NameInput, m.TryIt.ValueInput)
+	headersLines, headerCursorLine := renderHeadersSection(headerParams, m.TryIt.HeaderTable.Cursor, m.TryIt.HeaderTable.Focused, m.TryIt.HeaderTable.Editing, m.TryIt.HeaderTable.ParamField, m.TryIt.HeaderTable.NameInput, m.TryIt.HeaderTable.ValueInput)
 	lines = append(lines, "")
 	headersStart := len(lines)
 	lines = append(lines, headersLines...)
-	if m.TryIt.HeadersFocused && headerCursorLine >= 0 {
+	if m.TryIt.HeaderTable.Focused && headerCursorLine >= 0 {
 		cursorLine = headersStart + headerCursorLine
 	}
 
@@ -1199,7 +994,7 @@ func (m Model) renderTryItLines(ep *openapi.ParsedEndpoint, width int) ([]string
 		editing := selected && m.TryIt.ParamEditing
 		editingView := ""
 		if editing {
-			editingView = m.TryIt.ValueInput.View()
+			editingView = m.TryIt.HeaderTable.ValueInput.View()
 		}
 		if selected && !m.TryIt.BodyFocused {
 			cursorLine = len(lines)

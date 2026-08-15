@@ -173,7 +173,7 @@ func TestQuitGuardedWhileEditingCustomParam(t *testing.T) {
 	if !m.TryIt.ParamEditing || m.Quitting {
 		t.Errorf("expected 'q' to type into the name field, not quit")
 	}
-	if m.TryIt.NameInput.Value() != "q" {
-		t.Errorf("expected literal 'q' typed, got %q", m.TryIt.NameInput.Value())
+	if m.TryIt.HeaderTable.NameInput.Value() != "q" {
+		t.Errorf("expected literal 'q' typed, got %q", m.TryIt.HeaderTable.NameInput.Value())
 	}
 }

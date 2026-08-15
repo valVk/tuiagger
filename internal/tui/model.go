@@ -44,30 +44,22 @@ type tryItState struct {
 
 	ParamCursor  int
 	ParamEditing bool
-	ValueInput   textinput.Model
 
 	// CustomParams backs the PARAMETERS table's always-present "[ + ]" row
 	// — matching ParametersSection.tsx, which appends an `addNew` row
 	// unconditionally in try-it-out mode regardless of whether the
 	// endpoint declares any spec parameters, so the section (and its
 	// hints) never disappears and custom query/path params can always be
-	// added. NameInput/ParamField back the name half of custom/add-new row
-	// editing (ValueInput above is shared with spec-param editing, one at
-	// a time since only one row can be selected).
+	// added.
 	CustomParams []storage.CustomParameter
-	ParamField   string // "name" | "value", used while editing a custom/add-new row
-	NameInput    textinput.Model
 	NewParamIn   string // in-progress type ("query"/"path") for the add-new row
 
-	// HeadersFocused/HeaderCursor/HeaderEditing back a second, independent
-	// table above PARAMETERS for CustomParams entries with In=="header" —
-	// matches HeadersSection.tsx, a wholly separate NAME/VALUE-only editor
-	// (no TYPE/DESCRIPTION columns, no enum cycling). Editing state
-	// (NameInput/ValueInput/ParamField) is shared with the PARAMETERS
-	// table since only one of the two can ever be mid-edit at once.
-	HeadersFocused bool
-	HeaderCursor   int
-	HeaderEditing  bool
+	// HeaderTable backs a second, independent table above PARAMETERS for
+	// CustomParams entries with In=="header" — matches HeadersSection.tsx.
+	// Also supplies the ParamField/NameInput/ValueInput widgets used by
+	// PARAMETERS' own custom/add-new row (and spec-param) editing, since
+	// only one of the two tables can ever be mid-edit at once.
+	HeaderTable headerTableState
 
 	EditingPath bool
 	PathInput   textinput.Model
