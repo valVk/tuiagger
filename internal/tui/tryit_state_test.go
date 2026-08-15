@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
@@ -9,8 +10,47 @@ import (
 
 func TestEncodeFormURLEncodedFlattensTopLevelObject(t *testing.T) {
 	got := encodeFormURLEncoded(map[string]any{"name": "doggie", "id": float64(10)})
-	if got != "id=10&name=doggie" {
-		t.Errorf("expected sorted, encoded key=value pairs, got %q", got)
+	if got != "id=10\nname=doggie" {
+		t.Errorf("expected sorted, human-readable key=value lines, got %q", got)
+	}
+}
+
+func TestEncodeFormURLEncodedRepeatsKeyForPlainArray(t *testing.T) {
+	got := encodeFormURLEncoded(map[string]any{"tags": []any{"a", "b"}})
+	if got != "tags=a\ntags=b" {
+		t.Errorf("expected one line per array item, got %q", got)
+	}
+}
+
+func TestEncodeFormURLEncodedFallsBackToJSONForObjectArray(t *testing.T) {
+	got := encodeFormURLEncoded(map[string]any{
+		"tags": []any{map[string]any{"id": float64(1), "name": "x"}},
+	})
+	if strings.Contains(got, "\n") {
+		t.Errorf("expected a single compact-JSON line for an object array, got %q", got)
+	}
+	if !strings.Contains(got, `"id":1`) {
+		t.Errorf("expected the object array embedded as JSON, got %q", got)
+	}
+}
+
+func TestFormTextToQueryStringEncodesForWire(t *testing.T) {
+	got := formTextToQueryString("name=doggie & co\nid=10\n\nnot-a-field\ntags=a\ntags=b")
+	values, err := url.ParseQuery(got)
+	if err != nil {
+		t.Fatalf("expected a valid query string, got %q: %v", got, err)
+	}
+	if values.Get("name") != "doggie & co" || values.Get("id") != "10" {
+		t.Errorf("expected round-tripped field values, got %+v", values)
+	}
+	if got2 := values["tags"]; len(got2) != 2 || got2[0] != "a" || got2[1] != "b" {
+		t.Errorf("expected repeated 'tags' lines to become a multi-value field, got %+v", got2)
+	}
+	if _, ok := values["not-a-field"]; ok {
+		t.Errorf("expected a line without '=' to be skipped, got %+v", values)
+	}
+	if !strings.Contains(got, "%20") && !strings.Contains(got, "+") {
+		t.Errorf("expected the space in 'doggie & co' actually percent/plus-encoded on the wire, got %q", got)
 	}
 }
 
@@ -30,8 +70,8 @@ func TestEncodeFormURLEncodedJSONEncodesNestedValues(t *testing.T) {
 
 func TestEncodeFormURLEncodedNonObjectFallsBackToSingleField(t *testing.T) {
 	got := encodeFormURLEncoded("just a string")
-	if got != "value=just+a+string" {
-		t.Errorf("expected a single 'value' field, got %q", got)
+	if got != "value=just a string" {
+		t.Errorf("expected a single, unescaped 'value' field, got %q", got)
 	}
 }
 

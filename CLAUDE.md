@@ -222,6 +222,7 @@ Save Dialog (s):
 - Press `t` on any endpoint to enter edit mode
 - Fill in path, query, header parameters; the request body auto-fills with realistic generated data and is fully editable (`j` past the last parameter row to focus it, `i` to edit)
 - When an endpoint declares more than one request body content type (`application/json`, `application/x-www-form-urlencoded`, `application/xml`), cycle between them with `c` while BODY is focused — the body is re-scaffolded and the `Content-Type` header sent on execute follows the selected tab
+- `application/x-www-form-urlencoded` bodies are shown/edited as plain `key=value` lines (one field per line, unescaped; a plain array repeats its key, e.g. `tags=a` / `tags=b`), not the actual percent-encoded wire text — percent-encoding happens once, automatically, right before the request is sent
 - Press `e` to execute; view response with status, headers, body, and curl command
 - Parameter values, body, and the selected content type persist per-endpoint as overrides in `.tuiagger/overrides.json`
 

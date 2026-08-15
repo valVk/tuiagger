@@ -445,35 +445,100 @@ func encodeBody(contentType string, v any) string {
 	}
 }
 
-// encodeFormURLEncoded serializes a scaffolded value tree as
-// application/x-www-form-urlencoded — only top-level object keys become
-// form fields (the format has no natural nested-object encoding); a
-// nested object/array value falls back to being JSON-encoded into that
-// one field rather than silently dropped or expanded into bracket
-// notation nobody asked for. Built on the same net/url.Values{}.Encode()
-// primitive urlbuilder.go's BuildRequestURL already uses for query
-// strings — no new dependency.
+// encodeFormURLEncoded serializes a scaffolded value tree as human-
+// editable "key=value" text — plain and unescaped, one field per line —
+// rather than the actual percent-encoded wire format: hand-editing a real
+// application/x-www-form-urlencoded string (spaces as "+", punctuation as
+// "%XX") in a plain textarea is painful and error-prone, found via a user
+// report showing exactly that friction. formTextToQueryString does the
+// real percent-encoding, run once at send time (execute.go's
+// buildRequestSpec), so what's shown/typed here never needs to match the
+// wire format the user is actually sending.
+//
+// Only top-level object keys become fields (the format has no natural
+// nested-object encoding). A plain-valued array (strings/numbers/bools)
+// repeats its key once per item — matching how HTML forms and
+// net/url.Values themselves already encode multi-value fields, so
+// formTextToQueryString's line-by-line url.Values.Add just works without
+// bracket-notation machinery. An object, or an array containing one,
+// falls back to a single compact-JSON line for that key (jsonCompact, not
+// jsonPretty — an indented value would span multiple lines and get
+// misread as separate key=value pairs by formTextToQueryString) rather
+// than being silently dropped or exploded into per-field lines nobody
+// asked for.
 func encodeFormURLEncoded(v any) string {
 	obj, ok := v.(map[string]any)
 	if !ok {
 		// Not an object at the top level (e.g. a bare array/scalar
 		// schema) — nothing sensible to key form fields by.
-		return url.Values{"value": {formFieldValue(v)}}.Encode()
+		return "value=" + toStr(v)
 	}
-	values := url.Values{}
+	var lines []string
 	for _, k := range sortedAnyKeys(obj) {
-		values.Set(k, formFieldValue(obj[k]))
+		lines = append(lines, formFieldLines(k, obj[k])...)
 	}
-	return values.Encode()
+	return strings.Join(lines, "\n")
 }
 
-func formFieldValue(v any) string {
+func formFieldLines(key string, v any) []string {
+	if arr, ok := v.([]any); ok && isPlainValueArray(arr) {
+		lines := make([]string, len(arr))
+		for i, item := range arr {
+			lines[i] = key + "=" + toStr(item)
+		}
+		return lines
+	}
 	switch v.(type) {
 	case map[string]any, []any:
-		return jsonPretty(v)
+		return []string{key + "=" + jsonCompact(v)}
 	default:
-		return toStr(v)
+		return []string{key + "=" + toStr(v)}
 	}
+}
+
+// isPlainValueArray reports whether every element is a scalar (string,
+// number, bool, nil) rather than a nested object/array — the shape
+// formFieldLines can repeat one key=value line per item for.
+func isPlainValueArray(arr []any) bool {
+	for _, item := range arr {
+		switch item.(type) {
+		case map[string]any, []any:
+			return false
+		}
+	}
+	return true
+}
+
+func jsonCompact(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// formTextToQueryString converts encodeFormURLEncoded's human-editable
+// "key=value" lines into the actual percent-encoded
+// application/x-www-form-urlencoded wire format. Blank lines and lines
+// without "=" are skipped (typing/editing artifacts, not errors worth
+// surfacing here — same "trust the user's hand-typed body" model already
+// in place for JSON). Repeated keys accumulate as a multi-value field
+// (url.Values.Add), matching formFieldLines' one-line-per-array-item
+// encoding on the way in.
+func formTextToQueryString(text string) string {
+	values := url.Values{}
+	for line := range strings.SplitSeq(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		values.Add(key, value)
+	}
+	return values.Encode()
 }
 
 // encodeXML serializes a scaffolded value tree as XML, recursively:

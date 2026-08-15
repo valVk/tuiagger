@@ -27,13 +27,24 @@ func buildRequestSpec(servers []openapi.Server, selectedServer int, store *stora
 	envVars, authCreds := loadEnvAndAuth(store)
 	collector.EnvVars = envVars
 
+	interpolatedBody := request.Interpolate(body, envVars)
+	if contentType == "application/x-www-form-urlencoded" {
+		// The BODY box holds encodeFormURLEncoded's human-editable
+		// "key=value" text (see its doc comment), not the real wire
+		// format — encode it here, after {{env}} interpolation has run
+		// against the readable text and not against an already
+		// percent-escaped string (where a literal "{{" would already be
+		// "%7B%7B" and never match).
+		interpolatedBody = formTextToQueryString(interpolatedBody)
+	}
+
 	return request.Spec{
 		Method:            method,
 		BaseURL:           baseURL,
 		Path:              collector.ApplyPathParams(path),
 		QueryParams:       collector.QueryParams(),
 		HeaderParams:      collector.HeaderParams(),
-		Body:              request.Interpolate(body, envVars),
+		Body:              interpolatedBody,
 		ContentType:       contentType,
 		OperationSecurity: security,
 		SecuritySchemes:   securitySchemes,

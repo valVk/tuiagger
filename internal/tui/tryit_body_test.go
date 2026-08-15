@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -268,6 +269,63 @@ func TestExecuteSendsContentTypeHeaderMatchingSelectedTab(t *testing.T) {
 	}
 	if gotContentType != types[1] {
 		t.Errorf("expected Content-Type %q for the selected tab, got %q", types[1], gotContentType)
+	}
+}
+
+// TestExecuteEncodesHumanReadableFormBodyForTheWire is a regression test
+// for the human-editable BODY box design: the box shows/accepts plain
+// "key=value" text (encodeFormURLEncoded), but the actual HTTP request
+// must carry the real percent-encoded application/x-www-form-urlencoded
+// bytes, not the readable text verbatim — found via a user report that
+// hand-editing a raw percent-encoded string in the textarea was painful.
+func TestExecuteEncodesHumanReadableFormBodyForTheWire(t *testing.T) {
+	var gotBody, gotContentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := endpointWithMultiContentTypeBodyModel(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), newTestStore(t))
+	m = step(m, "t")
+	types := sortedContentTypes(m.TryIt.Endpoint.Operation.RequestBody.Content)
+	if types[1] != "application/x-www-form-urlencoded" {
+		t.Fatalf("test assumes tab 1 is form-urlencoded, got %q", types[1])
+	}
+	m = focusBody(m)
+	m = step(m, "c") // select form-urlencoded
+	m = step(m, "i")
+	m.TryIt.BodyInput.SetValue("name=doggie & co\nid=10")
+	m.TryIt.Body = m.TryIt.BodyInput.Value()
+	m = step(m, "esc", "k") // commit body, back to PARAMETERS so 'e' reaches top-level execute
+
+	next, cmd := m.Update(key("e"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatalf("expected an execute command")
+	}
+	msg := cmd()
+	m2, _ := m.Update(msg)
+	m = m2.(Model)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Viewer.Response)
+	}
+	if gotContentType != "application/x-www-form-urlencoded" {
+		t.Fatalf("expected form-urlencoded Content-Type, got %q", gotContentType)
+	}
+	if gotBody == "name=doggie & co\nid=10" {
+		t.Fatalf("expected the human-readable text percent-encoded before sending, got it sent verbatim: %q", gotBody)
+	}
+	values, err := url.ParseQuery(gotBody)
+	if err != nil {
+		t.Fatalf("expected a valid wire-format query string, got %q: %v", gotBody, err)
+	}
+	if values.Get("name") != "doggie & co" || values.Get("id") != "10" {
+		t.Errorf("expected the fields to round-trip through encoding, got %+v", values)
 	}
 }
 
