@@ -158,13 +158,25 @@ func newBodyTextarea() textarea.Model {
 	return ta
 }
 
-// setBodyValue sets a body textarea's content and positions the cursor at
-// the very top. SetValue alone leaves the cursor at the end of the
-// inserted text — the bottom of a multi-line JSON body — so entering edit
-// mode always opened scrolled to the bottom instead of the top (found via
-// a user report: "move cursor top").
+// setBodyValue sets a body textarea's content, sizes it to match, and
+// positions the cursor at the very top.
+//
+// Height: the textarea's own SetHeight is a fixed row count (the
+// constructor's SetHeight(10) padded shorter content with blank rows,
+// same bug class the removed Prompt/CursorLine styling was), but the
+// read-only preview box sizes itself to exactly its content's line count
+// with no padding — so switching into edit mode visibly grew or shrank
+// the box instead of it staying put. Sized here to match exactly (found
+// via a user report: "textarea in edit mode should be the same as
+// preview height").
+//
+// Cursor: SetValue alone leaves the cursor at the end of the inserted
+// text — the bottom of a multi-line JSON body — so entering edit mode
+// always opened scrolled to the bottom instead of the top (found via a
+// user report: "move cursor top").
 func setBodyValue(ta textarea.Model, value string) textarea.Model {
 	ta.SetValue(value)
+	ta.SetHeight(len(strings.Split(value, "\n")))
 	for range ta.LineCount() {
 		ta.CursorUp()
 	}
