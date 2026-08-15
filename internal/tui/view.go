@@ -618,7 +618,7 @@ func paramPlaceholder(p openapi.Parameter) string {
 // — the viewer's interactive hints (position indicator, tab-toggle hint,
 // selection hint) only show in browse mode with the right panel focused.
 func (m Model) renderResponseBlock(width int) []string {
-	if m.Response == nil {
+	if m.Viewer.Response == nil {
 		return nil
 	}
 	// Matches the try-it-out response-viewer keys now being wired up in
@@ -626,7 +626,7 @@ func (m Model) renderResponseBlock(width int) []string {
 	// indicator, v/y hint, \:toggle) show whenever those keys actually
 	// work, not just in browse mode.
 	active := m.Mode == ModeTryIt || (m.Mode == ModeBrowse && m.ActivePanel == PanelRight)
-	return append([]string{""}, m.Viewer.render(m.Response, m.Curl, active, width)...)
+	return append([]string{""}, m.Viewer.View(active, width)...)
 }
 
 // renderResponseTabs matches ResponsesSection.tsx: "Responses" (not

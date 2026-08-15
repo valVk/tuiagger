@@ -320,7 +320,7 @@ func TestExecuteWithoutChangesDoesNotMarkOverridden(t *testing.T) {
 	next2, _ := m.Update(msg)
 	m = next2.(Model)
 
-	if m.Response == nil {
+	if m.Viewer.Response == nil {
 		t.Fatalf("expected a response")
 	}
 	if got := m.Store.GetEndpointOverride(string(ep.Method), ep.Path); got != nil {
@@ -387,7 +387,7 @@ func TestResponseScrollsIntoViewAfterExecute(t *testing.T) {
 	next2, _ := m.Update(msg)
 	m = next2.(Model)
 
-	if m.Response == nil {
+	if m.Viewer.Response == nil {
 		t.Fatalf("expected a response")
 	}
 	if m.RightScroll == 0 {
@@ -651,10 +651,10 @@ func TestExecuteMsgClearsLoadingAndSetsResponse(t *testing.T) {
 	if m.Loading {
 		t.Errorf("expected Loading cleared")
 	}
-	if m.Response == nil || m.Response.Status != 200 {
-		t.Errorf("expected response set, got %+v", m.Response)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Errorf("expected response set, got %+v", m.Viewer.Response)
 	}
-	if m.Curl != "curl ..." {
+	if m.Viewer.Curl != "curl ..." {
 		t.Errorf("expected curl set")
 	}
 }

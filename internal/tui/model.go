@@ -55,10 +55,8 @@ type Model struct {
 	RenameTag        renameTagState
 	TagDeleteConfirm string // custom tag name pending 'D' confirmation, "" = none
 
-	Response *request.Response
-	Curl     string
-	Loading  bool
-	Viewer   responseViewer
+	Loading bool
+	Viewer  responseViewer
 
 	HTTPClient request.HTTPClient
 	Store      *storage.Store
@@ -221,20 +219,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case responseMsg:
 		m.Loading = false
-		m.Response = msg.response
-		m.Curl = msg.curl
-		if msg.response != nil {
-			m.Viewer = newResponseViewer(msg.response.Body)
-		}
+		var cmd tea.Cmd
+		m.Viewer, cmd = m.Viewer.Update(msg)
 		m.RightScroll = m.scrollToResponse()
-		return m, nil
+		return m, cmd
 	case yankExpiredMsg:
-		if msg.curl {
-			m.Viewer.YankedCurl = false
-		} else {
-			m.Viewer.Yanked = false
-		}
-		return m, nil
+		var cmd tea.Cmd
+		m.Viewer, cmd = m.Viewer.Update(msg)
+		return m, cmd
 	case reloadMsg:
 		return m.applyReload(msg), nil
 	case tea.KeyMsg:
@@ -258,8 +250,7 @@ func (m Model) applyReload(msg reloadMsg) Model {
 	m.FlatList = buildFlatList(m.AllTags, m.EndpointsByTag, m.SavedRequestsByTag, m.ExpandedTags)
 	m.LeftIndex = m.safeLeftIndex()
 	m.Mode = ModeBrowse
-	m.Response = nil
-	m.Curl = ""
+	m.Viewer = responseViewer{}
 	m.Loading = false
 	m.RightScroll = 0
 	return m
@@ -399,7 +390,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// input handlers that both fire on the same keypress — replicated here
 	// by routing to the viewer and then still falling through to the
 	// generic handler below, rather than picking one.
-	if m.Response != nil {
+	if m.Viewer.Response != nil {
 		switch key {
 		case "J", "K", "G", "v", "y", "esc", `\`:
 			var cmd tea.Cmd
@@ -408,9 +399,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "C":
 			// Go-only addition, not a TS port — yanks the generated curl
 			// command to the clipboard, independent of tab/selection state.
-			if m.Curl != "" {
+			if m.Viewer.Curl != "" {
 				var cmd tea.Cmd
-				m.Viewer, cmd = m.Viewer.yankCurl(m.Curl)
+				m.Viewer, cmd = m.Viewer.yankCurl(m.Viewer.Curl)
 				return m, cmd
 			}
 		case "j", "k":

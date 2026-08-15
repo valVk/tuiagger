@@ -139,7 +139,7 @@ func (m Model) renderManualPanel(height, width int) string {
 		lines = append(lines, strings.Split(bodyBoxStyle.Render(bodyContent), "\n")...)
 	}
 
-	if m.Response != nil {
+	if m.Viewer.Response != nil {
 		lines = append(lines, m.renderResponseBlock(inner)...)
 	}
 

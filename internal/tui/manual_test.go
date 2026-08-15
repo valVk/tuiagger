@@ -282,8 +282,8 @@ func TestManualExecuteSendsRealHTTPRequest(t *testing.T) {
 	next2, _ := m.Update(msg)
 	m = next2.(Model)
 
-	if m.Response == nil || m.Response.Status != 200 {
-		t.Fatalf("expected a successful response, got %+v", m.Response)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Viewer.Response)
 	}
 	if gotMethod != "POST" || gotPath != "/widgets" || gotBody != `{"ok":true}` {
 		t.Errorf("expected POST /widgets with the typed body, got method=%q path=%q body=%q", gotMethod, gotPath, gotBody)
@@ -348,8 +348,8 @@ func TestSavedRequestQuickExecuteSendsRealHTTPRequest(t *testing.T) {
 	next2, _ := m.Update(msg)
 	m = next2.(Model)
 
-	if m.Response == nil || m.Response.Status != 200 {
-		t.Fatalf("expected a successful response, got %+v", m.Response)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Viewer.Response)
 	}
 	if gotMethod != "GET" || gotPath != "/gadgets" || gotHeader != "secret" {
 		t.Errorf("expected GET /gadgets with X-Api-Key header, got method=%q path=%q header=%q", gotMethod, gotPath, gotHeader)

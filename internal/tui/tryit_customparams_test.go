@@ -157,8 +157,8 @@ func TestExecuteSendsCustomQueryParam(t *testing.T) {
 	msg := cmd()
 	next2, _ := m.Update(msg)
 	m = next2.(Model)
-	if m.Response == nil || m.Response.Status != 200 {
-		t.Fatalf("expected successful response, got %+v", m.Response)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Fatalf("expected successful response, got %+v", m.Viewer.Response)
 	}
 	if gotQuery != "filter=active" {
 		t.Errorf("expected custom query param sent, got %q", gotQuery)

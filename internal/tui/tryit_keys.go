@@ -77,7 +77,7 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// "execute, then copy the result" is an extremely common workflow to
 	// lock behind switching modes. Deliberately enabling it here — see
 	// HANDOFF.md.
-	if m.Response != nil {
+	if m.Viewer.Response != nil {
 		switch key {
 		case "J", "K", "G", "v", "y", `\`:
 			var cmd tea.Cmd
@@ -88,9 +88,9 @@ func (m Model) handleTryItKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// command to the clipboard, independent of tab/selection state.
 			// Doesn't collide with try-it-out's own 'c' (cycle param type,
 			// lowercase, further down this switch).
-			if m.Curl != "" {
+			if m.Viewer.Curl != "" {
 				var cmd tea.Cmd
-				m.Viewer, cmd = m.Viewer.yankCurl(m.Curl)
+				m.Viewer, cmd = m.Viewer.yankCurl(m.Viewer.Curl)
 				return m, cmd
 			}
 		case "j", "k":

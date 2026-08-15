@@ -93,12 +93,17 @@ the tryit/manual split via PR #4, so this branch has `tryit_state.go`/
 in the final stage — same pattern as last time.
 
 - [x] Stage 0 — commit this plan
-- [ ] Stage 1 — ResponseViewer → real component. Move `Response`/`Curl`
-      fields into `responseViewer` itself (populated from `responseMsg`
-      inside its own new `Update`). Rename `handleKey`→`Update`,
-      `render`→`View`. Root `Model` forwards `tea.KeyMsg`/`responseMsg`/
-      `yankExpiredMsg` into it instead of special-casing `yankExpiredMsg`
-      itself.
+- [x] Stage 1 — ResponseViewer → real component. `Response`/`Curl` moved
+      from `Model` into `responseViewer` (populated from `responseMsg`
+      inside its new `Update`, consumed by its new `View`). Root `Model`
+      forwards `responseMsg`/`yankExpiredMsg`/gated `tea.KeyMsg` into
+      `Update` instead of special-casing `yankExpiredMsg` itself. Kept the
+      existing, directly-tested `handleKey(keyStr string)`/
+      `render(resp, curl, active, width)`/`yankCurl(curl string)` as the
+      implementation `Update`/`View` wrap, rather than rewriting
+      already-well-tested internals just to match the naming convention —
+      `Update`/`View` are the new component-contract entry points, the
+      lower-level methods are unchanged plumbing underneath.
 - [ ] Stage 2 — Split infopopup.go into `ServersPanel`/`AuthPanel`/
       `EnvironmentsPanel` (each own state struct + `Update`/`View`), with
       `InfoPopup` shrinking to an `InfoSection`-keyed 3-way dispatch.

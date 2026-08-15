@@ -193,8 +193,8 @@ func TestExecuteSendsTheEditedBodyVerbatim(t *testing.T) {
 	msg := cmd()
 	m2, _ := m.Update(msg)
 	m = m2.(Model)
-	if m.Response == nil || m.Response.Status != 200 {
-		t.Fatalf("expected a successful response, got %+v", m.Response)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Viewer.Response)
 	}
 	if gotBody != `{"hand":"edited"}` {
 		t.Errorf("expected the hand-edited body sent verbatim, got %q", gotBody)
