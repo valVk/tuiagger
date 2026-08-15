@@ -304,28 +304,35 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // (leftWidth/rightWidth/inner/visibleHeight) — shared by scrollToResponse
 // and clampRightScroll below so both compute scroll positions against the
 // exact same content width/height the next render will actually use.
-func (m Model) rightPanelLayout() (inner, visibleHeight int) {
+// Returns rightWidth too (not just inner): renderTryItLines/
+// renderEndpointLines take the already-border-adjusted inner, but
+// renderManualLines re-derives its own inner from the outer width, so
+// rightPanelLineCount needs both conventions available.
+func (m Model) rightPanelLayout() (rightWidth, inner, visibleHeight int) {
 	contentHeight := max(m.Height-8, 10)
 	leftWidthPct := 30
 	if m.LeftExpanded {
 		leftWidthPct = 50
 	}
 	leftWidth := max(m.Width*leftWidthPct/100, 20)
-	rightWidth := max(m.Width-leftWidth-2, 20)
-	return max(rightWidth-4, 1), max(contentHeight-2, 1)
+	rightWidth = max(m.Width-leftWidth-2, 20)
+	return rightWidth, max(rightWidth-4, 1), max(contentHeight-2, 1)
 }
 
 // rightPanelLineCount returns how many lines the right panel would render
 // right now for clampRightScroll below — deliberately re-derived rather
 // than cached, the same content-dependent recompute scrollToResponse
 // already does for the same reason (cheap relative to a keypress).
-func (m Model) rightPanelLineCount(inner int) int {
-	if m.Mode == ModeTryIt {
+func (m Model) rightPanelLineCount(rightWidth, inner int) int {
+	switch m.Mode {
+	case ModeTryIt:
 		if m.TryIt.Endpoint == nil {
 			return 0
 		}
 		lines, _ := m.renderTryItLines(m.TryIt.Endpoint, inner)
 		return len(lines)
+	case ModeManual:
+		return len(m.renderManualLines(rightWidth))
 	}
 	item := m.selectedItem()
 	if item == nil {
@@ -349,8 +356,8 @@ func (m Model) rightPanelLineCount(inner int) int {
 // the view visibly moves — found via a user report ("press down 5
 // times... have to press up 5 times up to begin scroll up").
 func (m Model) clampRightScroll() int {
-	inner, visibleHeight := m.rightPanelLayout()
-	total := m.rightPanelLineCount(inner)
+	rightWidth, inner, visibleHeight := m.rightPanelLayout()
+	total := m.rightPanelLineCount(rightWidth, inner)
 	return min(max(m.RightScroll, 0), max(total-visibleHeight, 0))
 }
 
@@ -371,7 +378,7 @@ func (m Model) scrollToResponse() int {
 		return 0
 	}
 
-	inner, _ := m.rightPanelLayout()
+	_, inner, _ := m.rightPanelLayout()
 
 	var lines []string
 	if m.Mode == ModeTryIt {

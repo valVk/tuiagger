@@ -49,7 +49,26 @@ func (m Model) handleManualKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Manual.EditingBody = true
 			m.Manual.BodyInput = setBodyValue(m.Manual.BodyInput, m.Manual.Body)
 			m.Manual.BodyInput.Focus()
-		case "k", "up", "esc":
+		case "j", "down":
+			// Mirrors try-it-out's handleBodyFocusedKey: scrolls past the
+			// BODY box (e.g. to reach a response below it, or see the rest
+			// of a body taller than one screen). Clamped immediately (see
+			// clampRightScroll's doc comment) so scrolling past the bottom
+			// doesn't need an equal number of 'k' presses to start moving
+			// back up.
+			m.RightScroll++
+			m.RightScroll = m.clampRightScroll()
+		case "k", "up":
+			// Mirrors try-it-out: scroll back up first if the user
+			// scrolled past the box, only unfocusing back to PARAMETERS
+			// once back at the position BODY was originally focused from
+			// — see BodyScrollFloor's doc comment.
+			if m.RightScroll > m.Manual.BodyScrollFloor {
+				m.RightScroll--
+			} else {
+				m.Manual.BodyFocused = false
+			}
+		case "esc":
 			m.Manual.BodyFocused = false
 		}
 		return m, nil
@@ -102,6 +121,7 @@ func (m Model) handleManualKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Manual.ParamCursor++
 		} else if isWriteMethod(m.Manual.Method) {
 			m.Manual.BodyFocused = true
+			m.Manual.BodyScrollFloor = m.RightScroll
 		}
 		return m, nil
 	case "k", "up":

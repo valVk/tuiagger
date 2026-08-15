@@ -47,6 +47,11 @@ type manualState struct {
 	BodyFocused bool
 	EditingBody bool
 	BodyInput   textarea.Model
+	// BodyScrollFloor mirrors tryItState's field of the same name (see
+	// its doc comment) — RightScroll's value at the moment BODY was
+	// focused, so 'k' can scroll back up through whatever 'j' scrolled
+	// past before unfocusing back to PARAMETERS.
+	BodyScrollFloor int
 
 	ShowSaveDialog bool
 	SaveDialog     saveDialogState
@@ -72,6 +77,10 @@ func (m Model) enterManualNew() Model {
 	m.Mode = ModeManual
 	m.ActivePanel = PanelRight
 	m.Viewer = responseViewer{}
+	// Matches enterTryIt: without this, whatever scroll offset was left
+	// over from browsing (or a previous manual session) carries into the
+	// new draft instead of starting at the top.
+	m.RightScroll = 0
 	return m
 }
 
@@ -93,6 +102,7 @@ func (m Model) enterManualEdit(sr *storage.SavedRequest) Model {
 	m.Mode = ModeManual
 	m.ActivePanel = PanelRight
 	m.Viewer = responseViewer{}
+	m.RightScroll = 0
 	return m
 }
 

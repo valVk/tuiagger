@@ -8,18 +8,41 @@ import (
 	"github.com/valVK/tuiagger/internal/storage"
 )
 
-// renderManualPanel renders ManualRequestPanel.tsx's editor: method/path
-// header, action buttons, a merged query+header PARAMS table, and (for
-// write methods) a single-line BODY field — no bubbles/textarea vendored
-// yet, so multi-line body editing is a deliberate scope cut, see
-// HANDOFF.md.
+// renderManualPanel renders ManualRequestPanel.tsx's editor: the bordered
+// panel chrome plus a scrolled slice of renderManualLines' content.
 func (m Model) renderManualPanel(height, width int) string {
 	// ManualRequestPanel.tsx is always isActive while ModeManual is active
 	// (there's no left/right panel split to lose focus to), so it always
 	// gets the bold/thick border — but the *weight* still needs to match
 	// panelBorderStyle's thick chars, not just NormalBorder in cyan.
 	borderStyle, borderColor := panelBorderStyle(true)
+	lines := m.renderManualLines(width)
 
+	visibleHeight := max(height-2, 1)
+	start := min(m.RightScroll, max(len(lines)-1, 0))
+	end := min(start+visibleHeight, len(lines))
+	visible := lines[start:end]
+	for len(visible) < visibleHeight {
+		visible = append(visible, "")
+	}
+
+	return lipgloss.NewStyle().
+		Width(width-2).
+		Height(height).
+		Padding(0, 1).
+		BorderStyle(borderStyle).
+		BorderForeground(borderColor).
+		Render(strings.Join(visible, "\n"))
+}
+
+// renderManualLines builds ManualRequestPanel.tsx's content — method/path
+// header, action buttons, a merged query+header PARAMS table, and (for
+// write methods) a single-line BODY field — no bubbles/textarea vendored
+// yet, so multi-line body editing is a deliberate scope cut, see
+// HANDOFF.md. Split from renderManualPanel (which applies scroll + border
+// chrome on top) so rightPanelLineCount can measure this content without
+// duplicating it — same shape as renderTryItLines/renderEndpointLines.
+func (m Model) renderManualLines(width int) []string {
 	// Available columns inside the box: width minus the border (1 each
 	// side) minus Padding(0,1) (1 each side) — Width() below already
 	// counts padding internally (lipgloss), so only the border needs
@@ -149,21 +172,7 @@ func (m Model) renderManualPanel(height, width int) string {
 		lines = append(lines, m.renderResponseBlock(inner)...)
 	}
 
-	visibleHeight := max(height-2, 1)
-	start := min(m.RightScroll, max(len(lines)-1, 0))
-	end := min(start+visibleHeight, len(lines))
-	visible := lines[start:end]
-	for len(visible) < visibleHeight {
-		visible = append(visible, "")
-	}
-
-	return lipgloss.NewStyle().
-		Width(width-2).
-		Height(height).
-		Padding(0, 1).
-		BorderStyle(borderStyle).
-		BorderForeground(borderColor).
-		Render(strings.Join(visible, "\n"))
+	return lines
 }
 
 // paramEditWidgets bundles the name/value text inputs shared by any
