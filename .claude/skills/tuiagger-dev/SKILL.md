@@ -45,6 +45,27 @@ state actually is before reaching for either:
   fundamentally needs `Store`/`Spec`/sibling state on every call, second
   shape — and that's fine, don't manufacture a component for its own sake.
 
+When `TryIt` and `Manual` both need the same behavior, extract a shared
+pure module rather than duplicating it in each mode's own state/keys/
+render/execute files — the duplication is easy to miss since both live in
+separate files by design. `contenttype.go` (`contentTypeCycle`: cycling
+through a content-type list, used by both `tryit_keys.go`'s and
+`manual_keys.go`'s `c` handlers), `bodybox.go` (`renderBodyBox`/
+`renderBodyHeading`: the bordered BODY box's border-color/hint/height-
+accounting state machine, used by `tryit_render.go` and
+`manual_render.go`), and `internal/bodyformat` (`Encode`/`WireEncode`:
+JSON/form-urlencoded/XML body serialization, used by `tryit_state.go`,
+`tryit_execute.go`, and — via `execute.go`'s shared `buildRequestSpec` —
+`manual_execute.go`) are the established examples. Each is a small,
+dependency-light interface both modes call as an adapter over their own
+data (a schema-derived list vs. a fixed one; a scaffolded placeholder vs.
+a hand-typed body) — extract when the *duplicated logic* is identical and
+only the *data feeding it* differs, not when the underlying concepts are
+genuinely different (TryIt's and Manual's execute `tea.Cmd`s stay
+separate: TryIt has override persistence, spec params, and disabled-param
+tracking that Manual has none of — forcing them into one shape would
+parameterize away real differences, not remove any).
+
 Components in the first shape that can't perform a side effect
 themselves (closing a popup, persisting via `Store`, reading `Spec`) return
 an extra result value instead — the parent applies it. This is the

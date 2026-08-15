@@ -37,9 +37,8 @@ func (m Model) renderManualPanel(height, width int) string {
 
 // renderManualLines builds ManualRequestPanel.tsx's content — method/path
 // header, action buttons, a merged query+header PARAMS table, and (for
-// write methods) a single-line BODY field — no bubbles/textarea vendored
-// yet, so multi-line body editing is a deliberate scope cut, see
-// HANDOFF.md. Split from renderManualPanel (which applies scroll + border
+// write methods) a multi-line BODY box shared with try-it-out via
+// bodybox.go. Split from renderManualPanel (which applies scroll + border
 // chrome on top) so rightPanelLineCount can measure this content without
 // duplicating it — same shape as renderTryItLines/renderEndpointLines.
 func (m Model) renderManualLines(width int) []string {

@@ -38,7 +38,7 @@ tuiagger/
 │   │   ├── flatlist.go                # Left-panel tag/endpoint/saved-request data model
 │   │   ├── leftpanel.go               # Left panel: key handling + render
 │   │   ├── browse.go                  # Browse mode: key handling + render
-│   │   ├── tryit_state.go             # Try-it-out: state struct, enter/exit, small helpers
+│   │   ├── tryit_state.go             # Try-it-out: state struct, enter/exit, scaffoldFor
 │   │   ├── tryit_keys.go              # Try-it-out: key handling
 │   │   ├── tryit_render.go            # Try-it-out: rendering
 │   │   ├── tryit_execute.go           # Try-it-out: request execution
@@ -46,6 +46,8 @@ tuiagger/
 │   │   ├── manual_keys.go             # Manual builder: key handling
 │   │   ├── manual_render.go           # Manual builder: rendering
 │   │   ├── manual_execute.go          # Manual builder: request execution
+│   │   ├── contenttype.go             # contentTypeCycle — shared content-type cycling (tryit + manual)
+│   │   ├── bodybox.go                 # Shared BODY box render (tryit + manual)
 │   │   ├── execute.go                 # buildRequestSpec — shared by tryit/manual execute
 │   │   ├── headertable.go             # Shared HEADERS table sub-widget (tryit + manual)
 │   │   ├── paramtable.go              # Shared custom/add-new PARAMETERS row sub-widget
@@ -57,6 +59,8 @@ tuiagger/
 │   │   ├── savedialog.go              # Save dialog for manual requests
 │   │   ├── renametag.go               # Rename-tag overlay
 │   │   └── help.go                    # Interactive keyboard shortcut cheatsheet
+│   ├── bodyformat/
+│   │   └── bodyformat.go              # Encode/WireEncode — JSON/form-urlencoded/XML body serialization
 │   ├── openapi/
 │   │   ├── parser.go                  # OpenAPI spec loading/parsing (libopenapi)
 │   │   ├── schema.go                  # Schema traversal helpers
