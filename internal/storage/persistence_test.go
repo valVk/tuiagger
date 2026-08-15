@@ -47,6 +47,7 @@ func TestSaveEndpointOverrideRoundTrip(t *testing.T) {
 		Params:         map[string]string{"id": "42"},
 		CustomParams:   []CustomParameter{},
 		DisabledParams: []string{},
+		ContentType:    "application/x-www-form-urlencoded",
 	}
 	if err := s.SaveEndpointOverride("get", "/pet/{id}", override); err != nil {
 		t.Fatal(err)
@@ -57,6 +58,9 @@ func TestSaveEndpointOverrideRoundTrip(t *testing.T) {
 	}
 	if got.Params["id"] != "42" {
 		t.Errorf("expected param id=42, got %+v", got.Params)
+	}
+	if got.ContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("expected ContentType to round-trip, got %q", got.ContentType)
 	}
 	if got.LastUsed == "" {
 		t.Errorf("expected LastUsed to be stamped")

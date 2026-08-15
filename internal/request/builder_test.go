@@ -107,6 +107,19 @@ func TestBuildSetsContentTypeOnlyWhenBodyPresentAndNotSet(t *testing.T) {
 	}
 }
 
+func TestBuildUsesExplicitContentTypeOverDefault(t *testing.T) {
+	built, err := Build(Spec{
+		Method: "post", BaseURL: "http://api.test", Path: "/x",
+		Body: "a=1&b=2", ContentType: "application/x-www-form-urlencoded",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := headerValue(built.Headers, "Content-Type"); !ok || v != "application/x-www-form-urlencoded" {
+		t.Errorf("expected explicit Content-Type to win over the application/json default, got %+v", built.Headers)
+	}
+}
+
 func TestBuildOnlyAttachesBodyForWriteMethods(t *testing.T) {
 	get, err := Build(Spec{Method: "get", BaseURL: "http://api.test", Path: "/x", Body: `{"a":1}`})
 	if err != nil {

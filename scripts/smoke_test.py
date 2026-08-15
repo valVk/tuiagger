@@ -161,7 +161,11 @@ STEPS: list[Step] = [
     ("Enter expands the first tag", "\r", r"GET|POST|PUT|DELETE"),
     ("j moves onto the newly-expanded endpoint row", "j", SPEC_TITLE),
     ("l focuses the right panel on the selected endpoint", "l", r"Try it out \(t\)"),
-    ("t enters try-it-out mode", "t", r"PARAMETERS"),
+    (
+        "t enters try-it-out mode, BODY lists declared content types as tabs",
+        "t",
+        r"PARAMETERS(?:.|\n)*application/x-www-form-urlencoded",
+    ),
     ("Esc exits try-it-out back to browse", "\x1b", r"Try it out \(t\)"),
     ("m opens the manual request builder", "m", r"MANUAL REQUEST"),
     ("Esc closes the manual request builder", "\x1b", SPEC_TITLE),

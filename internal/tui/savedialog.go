@@ -195,6 +195,7 @@ func (m Model) saveManualRequest(name, tag string) Model {
 		method = "GET"
 	}
 
+	contentType := manualSelectedContentType(manual.ContentTypeTab)
 	if manual.EditingRequest != nil {
 		m.Store.UpdateSavedRequest(manual.EditingRequest.ID, func(r *storage.SavedRequest) {
 			r.Method = method
@@ -202,7 +203,7 @@ func (m Model) saveManualRequest(name, tag string) Model {
 			r.QueryParams = queryParams
 			r.Headers = headers
 			r.Body = manual.Body
-			r.BodyType = "json"
+			r.BodyType = contentType
 			r.Name = name
 			r.Tag = tag
 		})
@@ -210,7 +211,7 @@ func (m Model) saveManualRequest(name, tag string) Model {
 		m.Store.AddSavedRequest(storage.SavedRequest{
 			ManualRequestState: storage.ManualRequestState{
 				Method: method, Path: manual.Path, QueryParams: queryParams, Headers: headers,
-				Body: manual.Body, BodyType: "json",
+				Body: manual.Body, BodyType: contentType,
 			},
 			Name: name,
 			Tag:  tag,

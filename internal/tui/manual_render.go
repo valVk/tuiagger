@@ -126,7 +126,11 @@ func (m Model) renderManualLines(width int) []string {
 	lines = append(lines, renderAddParamRow(addSelected, addSelected && manual.ParamEditing && manual.ParamAddNew, widgets))
 
 	if isWriteMethod(method) {
-		lines = append(lines, "", boldStyle.Render("BODY")+" "+dimStyle.Render("application/json"))
+		bodyHeading := boldStyle.Render("BODY")
+		if manual.BodyFocused {
+			bodyHeading += dimStyle.Render(" c:cycle")
+		}
+		lines = append(lines, "", bodyHeading, renderContentTypeTabLine(manualContentTypes, manualSelectedContentType(manual.ContentTypeTab)))
 		// Matches renderTryItBodySection's explicit Width — without it the
 		// box shrinks to fit whatever's currently typed instead of
 		// spanning the panel, which looked inconsistent once this editor

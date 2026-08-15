@@ -160,6 +160,7 @@ Try It Out:
   k (at first PARAMETERS row) - Focus the HEADERS section
   j (past last param) - Focus the BODY section
   i (body focused)     - Edit body (scaffolds realistic data if empty)
+  c (body focused)     - Cycle the request body's content type (json / form / xml)
   k / Esc (body focused) - Back to parameters / exit try-it-out
 
 Parameters / Headers:
@@ -202,6 +203,7 @@ Manual Request (m):
   Esc           - Close (discards an unsaved draft)
   k (at first PARAMETERS row) - Focus the HEADERS section
   j (past last PARAMETERS row, write methods only) - Focus the BODY section
+  c (body focused)     - Cycle the request body's content type (json / form / xml)
   (row editing inside PARAMETERS/HEADERS follows the Parameters / Headers
   table above: j/k move, i edit/add, x delete, d toggle enable, c cycle
   query/path type — PARAMETERS only, HEADERS entries are always type
@@ -219,11 +221,14 @@ Save Dialog (s):
 ### Try It Out
 - Press `t` on any endpoint to enter edit mode
 - Fill in path, query, header parameters; the request body auto-fills with realistic generated data and is fully editable (`j` past the last parameter row to focus it, `i` to edit)
+- When an endpoint declares more than one request body content type (`application/json`, `application/x-www-form-urlencoded`, `application/xml`), cycle between them with `c` while BODY is focused — the body is re-scaffolded and the `Content-Type` header sent on execute follows the selected tab
+- `application/x-www-form-urlencoded` bodies are shown/edited as plain `key=value` lines (one field per line, unescaped; a plain array repeats its key, e.g. `tags=a` / `tags=b`), not the actual percent-encoded wire text — percent-encoding happens once, automatically, right before the request is sent
 - Press `e` to execute; view response with status, headers, body, and curl command
-- Parameter values and body persist per-endpoint as overrides in `.tuiagger/overrides.json`
+- Parameter values, body, and the selected content type persist per-endpoint as overrides in `.tuiagger/overrides.json`
 
 ### Manual Request Builder
 - Press `m` to create custom requests not defined in the spec
+- Cycle the request body's content type (`application/json` / `application/x-www-form-urlencoded` / `application/xml`) with `c` while BODY is focused — no spec to read declared types from, so this is always the same fixed 3-way choice
 - Assign to existing or new custom tags, or leave untagged (goes to the `default` tag)
 - Save for reuse (stored in `.tuiagger/saved-requests.json`)
 - Saved requests appear with `*` in the left panel
@@ -318,7 +323,7 @@ https://petstore3.swagger.io/api/v3/openapi.json
 **In Scope:**
 - JSON and YAML OpenAPI specs (3.0.x, 3.1.x)
 - Path, query, header parameters
-- JSON request/response bodies
+- Request bodies: JSON, `application/x-www-form-urlencoded`, XML (scaffolding, editing, and sending); response bodies stay a read-only display, format-agnostic
 - Manual request builder with save/edit/delete
 - Environments with variable interpolation
 - Auth (Bearer, Basic, API key)
@@ -328,7 +333,7 @@ https://petstore3.swagger.io/api/v3/openapi.json
 - Local persistence per collection
 
 **Out of Scope:**
-- File uploads / FormData
+- File uploads / `multipart/form-data` (`application/x-www-form-urlencoded` is supported; multipart needs a file-attach UI and binary content this app doesn't have)
 - OAuth flows
 - Request history
 - WebSocket / streaming responses

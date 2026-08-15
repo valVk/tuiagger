@@ -13,7 +13,8 @@ import (
 // aren't wired into the TUI until Phase 5.
 func (m Model) manualExecuteCmd() tea.Cmd {
 	manual := m.Manual
-	return m.runRequestCmd(manual.Method, manual.Path, manual.Params, manual.Body)
+	contentType := manualSelectedContentType(manual.ContentTypeTab)
+	return m.runRequestCmd(manual.Method, manual.Path, manual.Params, manual.Body, contentType)
 }
 
 // savedRequestExecuteCmd runs a persisted saved request directly from
@@ -27,10 +28,11 @@ func (m Model) savedRequestExecuteCmd(sr *storage.SavedRequest) tea.Cmd {
 	for _, h := range sr.Headers {
 		params = append(params, storage.CustomParameter{ID: h.ID, Name: h.Key, Value: h.Value, In: "header", Enabled: h.Enabled})
 	}
-	return m.runRequestCmd(sr.Method, sr.Path, params, sr.Body)
+	contentType := manualSelectedContentType(indexOfContentType(sr.BodyType))
+	return m.runRequestCmd(sr.Method, sr.Path, params, sr.Body, contentType)
 }
 
-func (m Model) runRequestCmd(method, path string, params []storage.CustomParameter, body string) tea.Cmd {
+func (m Model) runRequestCmd(method, path string, params []storage.CustomParameter, body, contentType string) tea.Cmd {
 	specServers := m.Spec.Spec.Servers
 	selectedServer := m.SelectedServer
 	client := m.HTTPClient
@@ -47,7 +49,7 @@ func (m Model) runRequestCmd(method, path string, params []storage.CustomParamet
 
 	return func() tea.Msg {
 		collector := &request.ParameterCollector{CustomParams: params}
-		spec := buildRequestSpec(specServers, selectedServer, store, collector, method, path, body, security, securitySchemes)
+		spec := buildRequestSpec(specServers, selectedServer, store, collector, method, path, body, contentType, security, securitySchemes)
 
 		if client == nil {
 			return responseMsg{response: &request.Response{Error: "no HTTP client configured"}}

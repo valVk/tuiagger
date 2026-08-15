@@ -14,7 +14,7 @@ import (
 // environment here; callers needing a body-scaffold fallback (try-it-out)
 // or override persistence (also try-it-out) do that themselves before
 // calling in, since only one caller needs either.
-func buildRequestSpec(servers []openapi.Server, selectedServer int, store *storage.Store, collector *request.ParameterCollector, method, path, body string, security []openapi.SecurityRequirement, securitySchemes map[string]openapi.SecurityScheme) request.Spec {
+func buildRequestSpec(servers []openapi.Server, selectedServer int, store *storage.Store, collector *request.ParameterCollector, method, path, body, contentType string, security []openapi.SecurityRequirement, securitySchemes map[string]openapi.SecurityScheme) request.Spec {
 	baseURL := "http://localhost"
 	if len(servers) > 0 {
 		idx := selectedServer
@@ -27,13 +27,25 @@ func buildRequestSpec(servers []openapi.Server, selectedServer int, store *stora
 	envVars, authCreds := loadEnvAndAuth(store)
 	collector.EnvVars = envVars
 
+	interpolatedBody := request.Interpolate(body, envVars)
+	if contentType == "application/x-www-form-urlencoded" {
+		// The BODY box holds encodeFormURLEncoded's human-editable
+		// "key=value" text (see its doc comment), not the real wire
+		// format — encode it here, after {{env}} interpolation has run
+		// against the readable text and not against an already
+		// percent-escaped string (where a literal "{{" would already be
+		// "%7B%7B" and never match).
+		interpolatedBody = formTextToQueryString(interpolatedBody)
+	}
+
 	return request.Spec{
 		Method:            method,
 		BaseURL:           baseURL,
 		Path:              collector.ApplyPathParams(path),
 		QueryParams:       collector.QueryParams(),
 		HeaderParams:      collector.HeaderParams(),
-		Body:              request.Interpolate(body, envVars),
+		Body:              interpolatedBody,
+		ContentType:       contentType,
 		OperationSecurity: security,
 		SecuritySchemes:   securitySchemes,
 		AuthCredentials:   authCreds,

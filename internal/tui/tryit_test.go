@@ -70,6 +70,25 @@ func endpointWithBodyModel(t *testing.T) Model {
 	return m
 }
 
+// endpointWithMultiContentTypeBodyModel finds and selects an endpoint whose
+// requestBody declares more than one encodable content type, skipping the
+// test if the fixture has none.
+func endpointWithMultiContentTypeBodyModel(t *testing.T) Model {
+	m := New(loadTestSpec(t), "")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = next.(Model)
+	m = step(m, "x")
+	for i, item := range m.FlatList {
+		if item.Type == ItemEndpoint && item.Endpoint.Operation.RequestBody != nil &&
+			len(sortedContentTypes(item.Endpoint.Operation.RequestBody.Content)) > 1 {
+			m.LeftIndex = i
+			return m
+		}
+	}
+	t.Skip("no endpoint with multiple encodable content types in fixture")
+	return m
+}
+
 func TestEnterTryItSwitchesModeAndPanel(t *testing.T) {
 	m := firstEndpointModel(t)
 	m = step(m, "t")

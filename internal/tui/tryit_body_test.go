@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -198,6 +199,133 @@ func TestExecuteSendsTheEditedBodyVerbatim(t *testing.T) {
 	}
 	if gotBody != `{"hand":"edited"}` {
 		t.Errorf("expected the hand-edited body sent verbatim, got %q", gotBody)
+	}
+}
+
+func TestBodyFocusCCyclesContentTypeAndRescaffolds(t *testing.T) {
+	m := endpointWithMultiContentTypeBodyModel(t)
+	m = m.WithServices(nil, newTestStore(t))
+	m = step(m, "t")
+	ep := m.TryIt.Endpoint
+	types := sortedContentTypes(ep.Operation.RequestBody.Content)
+
+	m = focusBody(m)
+	if m.TryIt.ContentTypeTab != 0 {
+		t.Fatalf("expected to start on tab 0, got %d", m.TryIt.ContentTypeTab)
+	}
+
+	// Regression test: enterTryIt auto-scaffolds a JSON body for tab 0's
+	// default. Cycling 'c' must re-encode that body for the newly selected
+	// type, not just flip ContentTypeTab (which alone drives the
+	// Content-Type header on execute) — otherwise a user cycling to XML
+	// still has the tab-0 JSON text sitting in the box, so the request
+	// sent is "Content-Type: application/xml" with a JSON payload, a real
+	// bug found via a user report showing exactly that curl output.
+	if m.TryIt.Body == "" {
+		t.Fatalf("setup: expected enterTryIt to auto-scaffold a body")
+	}
+	m = step(m, "c")
+	if m.TryIt.ContentTypeTab != 1 {
+		t.Fatalf("expected 'c' to advance to tab 1, got %d", m.TryIt.ContentTypeTab)
+	}
+	wantContentType := types[1]
+	if wantContentType == "application/x-www-form-urlencoded" && !strings.Contains(m.TryIt.Body, "=") {
+		t.Errorf("expected the body re-encoded as form-urlencoded, got %q", m.TryIt.Body)
+	}
+	if wantContentType == "application/xml" && !strings.Contains(m.TryIt.Body, "<?xml") {
+		t.Errorf("expected the body re-encoded as XML, got %q", m.TryIt.Body)
+	}
+	if wantContentType == "application/json" && !strings.HasPrefix(strings.TrimSpace(m.TryIt.Body), "{") {
+		t.Errorf("expected the body re-encoded as JSON, got %q", m.TryIt.Body)
+	}
+}
+
+func TestExecuteSendsContentTypeHeaderMatchingSelectedTab(t *testing.T) {
+	var gotContentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := endpointWithMultiContentTypeBodyModel(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), newTestStore(t))
+	m = step(m, "t")
+	types := sortedContentTypes(m.TryIt.Endpoint.Operation.RequestBody.Content)
+	m = focusBody(m)
+	m = step(m, "c") // move to tab 1, a non-default (and thus persisted) selection
+
+	next, cmd := m.Update(key("e"))
+	if cmd == nil {
+		t.Fatalf("expected an execute command")
+	}
+	m = next.(Model)
+	msg := cmd()
+	m2, _ := m.Update(msg)
+	m = m2.(Model)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Viewer.Response)
+	}
+	if gotContentType != types[1] {
+		t.Errorf("expected Content-Type %q for the selected tab, got %q", types[1], gotContentType)
+	}
+}
+
+// TestExecuteEncodesHumanReadableFormBodyForTheWire is a regression test
+// for the human-editable BODY box design: the box shows/accepts plain
+// "key=value" text (encodeFormURLEncoded), but the actual HTTP request
+// must carry the real percent-encoded application/x-www-form-urlencoded
+// bytes, not the readable text verbatim — found via a user report that
+// hand-editing a raw percent-encoded string in the textarea was painful.
+func TestExecuteEncodesHumanReadableFormBodyForTheWire(t *testing.T) {
+	var gotBody, gotContentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := endpointWithMultiContentTypeBodyModel(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), newTestStore(t))
+	m = step(m, "t")
+	types := sortedContentTypes(m.TryIt.Endpoint.Operation.RequestBody.Content)
+	if types[1] != "application/x-www-form-urlencoded" {
+		t.Fatalf("test assumes tab 1 is form-urlencoded, got %q", types[1])
+	}
+	m = focusBody(m)
+	m = step(m, "c") // select form-urlencoded
+	m = step(m, "i")
+	m.TryIt.BodyInput.SetValue("name=doggie & co\nid=10")
+	m.TryIt.Body = m.TryIt.BodyInput.Value()
+	m = step(m, "esc", "k") // commit body, back to PARAMETERS so 'e' reaches top-level execute
+
+	next, cmd := m.Update(key("e"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatalf("expected an execute command")
+	}
+	msg := cmd()
+	m2, _ := m.Update(msg)
+	m = m2.(Model)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Viewer.Response)
+	}
+	if gotContentType != "application/x-www-form-urlencoded" {
+		t.Fatalf("expected form-urlencoded Content-Type, got %q", gotContentType)
+	}
+	if gotBody == "name=doggie & co\nid=10" {
+		t.Fatalf("expected the human-readable text percent-encoded before sending, got it sent verbatim: %q", gotBody)
+	}
+	values, err := url.ParseQuery(gotBody)
+	if err != nil {
+		t.Fatalf("expected a valid wire-format query string, got %q: %v", gotBody, err)
+	}
+	if values.Get("name") != "doggie & co" || values.Get("id") != "10" {
+		t.Errorf("expected the fields to round-trip through encoding, got %+v", values)
 	}
 }
 

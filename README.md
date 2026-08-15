@@ -204,6 +204,121 @@ Press `?` inside tuiagger to open the full interactive cheatsheet — it always 
 | `k` (at first PARAMETERS row) | Focus the HEADERS section |
 | `j` (past last param, write methods only) | Focus the BODY section |
 
+## Request Body Content Types
+
+When an endpoint (in Try It Out) or a manual request declares more than one request body format, cycle through them with `c` while BODY is focused: `application/json`, `application/x-www-form-urlencoded`, `application/xml`. The body is re-scaffolded for whichever type is selected, and the `Content-Type` header sent on execute always matches it.
+
+### application/x-www-form-urlencoded
+
+The BODY box shows and accepts plain, unescaped `key=value` lines — not the actual percent-encoded wire text. Percent-encoding happens automatically right before the request is sent, so you never have to hand-encode spaces (`%20`/`+`), punctuation, or other special characters yourself.
+
+| Data type | In the BODY box | Sent on the wire |
+|---|---|---|
+| String | `name=doggie` | `name=doggie` |
+| Number | `id=10` | `id=10` |
+| Boolean | `available=true` | `available=true` |
+| Array of strings/numbers | `tags=a`<br>`tags=b` | `tags=a&tags=b` |
+| Nested object | `category={"id":1,"name":"Dogs"}` | `category=%7B%22id%22%3A1%2C%22name%22%3A%22Dogs%22%7D` |
+| Array of objects | `photos=[{"url":"a.png"}]` | `photos=%5B%7B%22url%22%3A%22a.png%22%7D%5D` |
+
+Full example — everything above combined into one body:
+
+```
+name=doggie
+id=10
+available=true
+weight=12.5
+tags=a
+tags=b
+category={"id":1,"name":"Dogs"}
+photos=[{"url":"a.png"}]
+```
+
+is sent as:
+
+```
+name=doggie&id=10&available=true&weight=12.5&tags=a&tags=b&category=%7B%22id%22%3A1%2C%22name%22%3A%22Dogs%22%7D&photos=%5B%7B%22url%22%3A%22a.png%22%7D%5D
+```
+
+A plain array (strings, numbers, booleans) repeats the key once per item — matching how HTML forms encode multi-value fields. A nested object, or an array containing objects, has no natural flat form-field shape, so it's shown and sent as a single compact-JSON value for that key instead.
+
+### application/json
+
+Standard JSON — what's in the BODY box is exactly what's sent, no extra encoding step.
+
+| Data type | Example |
+|---|---|
+| String | `"name": "doggie"` |
+| Number | `"id": 10` |
+| Boolean | `"available": true` |
+| Null | `"note": null` |
+| Array of strings/numbers | `"tags": ["a", "b"]` |
+| Nested object | `"category": {"id": 1, "name": "Dogs"}` |
+| Array of objects | `"photos": [{"url": "a.png"}]` |
+
+Full example — everything above combined into one body:
+
+```json
+{
+  "available": true,
+  "category": {
+    "id": 1,
+    "name": "Dogs"
+  },
+  "id": 10,
+  "name": "doggie",
+  "note": null,
+  "photos": [
+    {
+      "url": "a.png"
+    }
+  ],
+  "tags": [
+    "a",
+    "b"
+  ],
+  "weight": 12.5
+}
+```
+
+### application/xml
+
+Also sent exactly as shown — no extra encoding step. There's no schema-level element name for a request body, so the root element is always `<root>`; every other tag name comes from its field's key.
+
+| Data type | Example |
+|---|---|
+| String | `<name>doggie</name>` |
+| Number | `<id>10</id>` |
+| Boolean | `<available>true</available>` |
+| Null | `<note></note>` |
+| Array of strings/numbers | `<tags>a</tags>`<br>`<tags>b</tags>` |
+| Nested object | `<category><id>1</id><name>Dogs</name></category>` |
+| Array of objects | `<photos><url>a.png</url></photos>` |
+
+Full example — everything above combined into one body:
+
+```xml
+<?xml version="1.0"?>
+<root>
+  <available>true</available>
+  <category>
+    <id>1</id>
+    <name>Dogs</name>
+  </category>
+  <id>10</id>
+  <name>doggie</name>
+  <note></note>
+  <photos>
+    <url>a.png</url>
+  </photos>
+  <tags>a</tags>
+  <tags>b</tags>
+  <weight>12.5</weight>
+</root>
+```
+
+A plain array repeats its tag once per item (`<tags>a</tags><tags>b</tags>`), same shape as the form-urlencoded case above. An array of objects repeats the tag with each item's fields nested inside it, rather than a single flat value — XML has no natural "just dump JSON in here" fallback the way a form field does.
+
 ## Faker Interpolation
 
 Use `{{faker.*.*()}}` syntax in parameter values and request bodies to generate realistic test data:

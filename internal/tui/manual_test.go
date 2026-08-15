@@ -250,6 +250,80 @@ func TestManualBodyEditorShowsDoneHint(t *testing.T) {
 // code that builds and sends the real HTTP request — had 0% test coverage
 // despite the feature being fully wired. Found via `go test -cover` during
 // the Phase 7 hardening pass, not a reported bug.
+func TestManualBodyFocusCCyclesContentType(t *testing.T) {
+	m := modelWithStore(t)
+	m = step(m, "m", "m") // cycle to POST, gives the manual builder a BODY section
+	m = step(m, "j")      // 'j' at the empty last param row focuses BODY
+	if !m.Manual.BodyFocused {
+		t.Fatalf("setup: expected BODY focused")
+	}
+	if m.Manual.ContentTypeTab != 0 {
+		t.Fatalf("expected to start on tab 0, got %d", m.Manual.ContentTypeTab)
+	}
+	m = step(m, "c")
+	if m.Manual.ContentTypeTab != 1 {
+		t.Errorf("expected 'c' to advance to tab 1, got %d", m.Manual.ContentTypeTab)
+	}
+	m = step(m, "c", "c")
+	if m.Manual.ContentTypeTab != 0 {
+		t.Errorf("expected the cycle to wrap back to tab 0 after 3 presses, got %d", m.Manual.ContentTypeTab)
+	}
+}
+
+func TestManualExecuteSendsContentTypeHeaderMatchingSelectedTab(t *testing.T) {
+	var gotContentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := modelWithStore(t)
+	m.Spec.Spec.Servers = []openapi.Server{{URL: srv.URL}}
+	m = m.WithServices(srv.Client(), m.Store)
+	m = step(m, "m", "m") // cycle to POST
+	m = step(m, "p")
+	m = typeText(m, "/widgets")
+	m = step(m, "enter")
+	m = step(m, "j") // focus BODY
+	m = step(m, "c") // select tab 1 (application/x-www-form-urlencoded)
+	m = step(m, "i") // start editing
+	m = typeText(m, "a=1")
+	m = step(m, "esc", "k") // commit body, exit BodyFocused so 'e' reaches top-level execute
+
+	next, cmd := m.Update(key("e"))
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatalf("expected an execute command")
+	}
+	msg := cmd()
+	next2, _ := m.Update(msg)
+	m = next2.(Model)
+	if m.Viewer.Response == nil || m.Viewer.Response.Status != 200 {
+		t.Fatalf("expected a successful response, got %+v", m.Viewer.Response)
+	}
+	if gotContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("expected the selected tab's Content-Type, got %q", gotContentType)
+	}
+}
+
+func TestManualSavePersistsSelectedContentType(t *testing.T) {
+	m := modelWithStore(t)
+	m = step(m, "m", "m")      // cycle to POST
+	m = step(m, "j", "c", "k") // focus BODY, select tab 1, unfocus back to PARAMETERS so 's' reaches the top-level binding
+	m = step(m, "s")
+	m = typeText(m, "Form Request")
+	m = step(m, "enter", "enter") // name confirm, default tag, save
+
+	requests := m.Store.LoadSavedRequests().Requests
+	if len(requests) != 1 {
+		t.Fatalf("expected one saved request, got %d", len(requests))
+	}
+	if requests[0].BodyType != "application/x-www-form-urlencoded" {
+		t.Errorf("expected the selected content type persisted as BodyType, got %q", requests[0].BodyType)
+	}
+}
+
 func TestManualExecuteSendsRealHTTPRequest(t *testing.T) {
 	var gotMethod, gotPath, gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

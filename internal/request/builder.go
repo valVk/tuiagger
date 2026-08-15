@@ -12,12 +12,19 @@ import (
 // Spec is everything needed to build one HTTP request, matching
 // types/request.ts's RequestSpec.
 type Spec struct {
-	Method            string
-	BaseURL           string
-	Path              string // path params already substituted
-	QueryParams       []storage.KeyValuePair
-	HeaderParams      []storage.KeyValuePair
-	Body              string
+	Method       string
+	BaseURL      string
+	Path         string // path params already substituted
+	QueryParams  []storage.KeyValuePair
+	HeaderParams []storage.KeyValuePair
+	Body         string
+	// ContentType is the request body's format, e.g. "application/json",
+	// "application/x-www-form-urlencoded", "application/xml" — a free-form
+	// string (not an enum) so a caller can widen the set of supported
+	// formats without a type change here. Build() falls back to
+	// "application/json" when this is empty, preserving prior behavior for
+	// any caller that doesn't set it.
+	ContentType       string
 	OperationSecurity []openapi.SecurityRequirement
 	SecuritySchemes   map[string]openapi.SecurityScheme
 	AuthCredentials   map[string]string
@@ -100,7 +107,11 @@ outer:
 
 	if spec.Body != "" {
 		if _, ok := getHeader("Content-Type"); !ok {
-			setHeader("Content-Type", "application/json")
+			contentType := spec.ContentType
+			if contentType == "" {
+				contentType = "application/json"
+			}
+			setHeader("Content-Type", contentType)
 		}
 	}
 
