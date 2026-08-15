@@ -65,15 +65,6 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 	store := m.Store
 
 	return func() tea.Msg {
-		baseURL := "http://localhost"
-		if len(servers) > 0 {
-			idx := selectedServer
-			if idx < 0 || idx >= len(servers) {
-				idx = 0
-			}
-			baseURL = servers[idx].URL
-		}
-
 		if store != nil {
 			override := storage.EndpointOverride{
 				Params:         paramValues,
@@ -100,14 +91,11 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 			}
 		}
 
-		envVars, authCreds := loadEnvAndAuth(store)
-
 		collector := &request.ParameterCollector{
 			SpecParams:      specParams,
 			CustomParams:    customParams,
 			DisabledParams:  disabled,
 			ParameterValues: paramValues,
-			EnvVars:         envVars,
 		}
 
 		path := ep.Path
@@ -128,19 +116,8 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 				body = jsonPretty(openapi.ScaffoldFakeBody(schema))
 			}
 		}
-		body = request.Interpolate(body, envVars)
 
-		spec := request.Spec{
-			Method:            effectiveMethod,
-			BaseURL:           baseURL,
-			Path:              collector.ApplyPathParams(path),
-			QueryParams:       collector.QueryParams(),
-			HeaderParams:      collector.HeaderParams(),
-			Body:              body,
-			OperationSecurity: security,
-			SecuritySchemes:   securitySchemes,
-			AuthCredentials:   authCreds,
-		}
+		spec := buildRequestSpec(servers, selectedServer, store, collector, effectiveMethod, path, body, security, securitySchemes)
 
 		if client == nil {
 			return responseMsg{response: &request.Response{Error: "no HTTP client configured"}}
@@ -148,20 +125,4 @@ func (m Model) executeWithOverride(ep *openapi.ParsedEndpoint, values map[string
 		resp, curl := request.Execute(client, spec)
 		return responseMsg{response: resp, curl: curl}
 	}
-}
-
-// loadEnvAndAuth reads the active environment's variables and stored auth
-// credentials at execute time — shared by tryit.go and manual.go so both
-// request paths get {{envVar}} interpolation and auth injection now that
-// Phase 5 wired credential/environment editing into the info popup.
-func loadEnvAndAuth(store *storage.Store) (envVars, authCreds map[string]string) {
-	if store == nil {
-		return nil, nil
-	}
-	envStore := store.LoadEnvironments()
-	if envStore.ActiveIndex >= 0 && envStore.ActiveIndex < len(envStore.Environments) {
-		envVars = envStore.Environments[envStore.ActiveIndex].Variables
-	}
-	authCreds = store.LoadAuth().Credentials
-	return envVars, authCreds
 }

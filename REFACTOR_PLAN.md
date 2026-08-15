@@ -163,7 +163,7 @@ This step is a pure move (`git mv`-then-edit-imports style), not a logic
 change — no function bodies change here beyond what Steps 2–3 already
 did. Run `task check` after the split.
 
-### [ ] Step 5 — Unify request-building duplication
+### [x] Step 5 — Unify request-building duplication
 
 `executeWithOverride` (tryit.go) and `runRequestCmd` (manual.go) both:
 build `baseURL` from servers/selected index, call `loadEnvAndAuth`,

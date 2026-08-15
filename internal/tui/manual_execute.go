@@ -46,29 +46,8 @@ func (m Model) runRequestCmd(method, path string, params []storage.CustomParamet
 	}
 
 	return func() tea.Msg {
-		baseURL := "http://localhost"
-		if len(specServers) > 0 {
-			idx := selectedServer
-			if idx < 0 || idx >= len(specServers) {
-				idx = 0
-			}
-			baseURL = specServers[idx].URL
-		}
-
-		envVars, authCreds := loadEnvAndAuth(store)
-
-		collector := &request.ParameterCollector{CustomParams: params, EnvVars: envVars}
-		spec := request.Spec{
-			Method:            method,
-			BaseURL:           baseURL,
-			Path:              collector.ApplyPathParams(path),
-			QueryParams:       collector.QueryParams(),
-			HeaderParams:      collector.HeaderParams(),
-			Body:              request.Interpolate(body, envVars),
-			OperationSecurity: security,
-			SecuritySchemes:   securitySchemes,
-			AuthCredentials:   authCreds,
-		}
+		collector := &request.ParameterCollector{CustomParams: params}
+		spec := buildRequestSpec(specServers, selectedServer, store, collector, method, path, body, security, securitySchemes)
 
 		if client == nil {
 			return responseMsg{response: &request.Response{Error: "no HTTP client configured"}}
